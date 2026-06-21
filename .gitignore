@@ -1,0 +1,27 @@
+# Build output
+bin/
+obj/
+
+# Database (runtime data, not source)
+*.db
+*.db-shm
+*.db-wal
+
+# Confidential seed / import data
+SeedData/
+
+# User-specific VS files
+*.user
+.vs/
+*.suo
+
+# Generated PDFs
+*.pdf
+
+# Claude Code local config
+.claude/
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store

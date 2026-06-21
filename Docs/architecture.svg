@@ -1,0 +1,192 @@
+<svg viewBox="0 0 820 640" xmlns="http://www.w3.org/2000/svg" role="img">
+  <title>Envelope Steward — Architecture</title>
+  <desc>Architecture diagram showing the five UI tabs, SQLite database tables, PDF receipt service, and seed data flow.</desc>
+
+  <style>
+    text { font-family: Arial, sans-serif; fill: #1a1a1a; }
+    .title  { font-size: 15px; font-weight: 700; }
+    .sub    { font-size: 11px; fill: #555; }
+    .label  { font-size: 10px; font-weight: 600; }
+    .detail { font-size: 9.5px; fill: #555; }
+    .tab    { fill: #cce5ff; stroke: #0d6efd; stroke-width: 1.5; }
+    .db     { fill: #fff3cd; stroke: #ffc107; stroke-width: 1.5; }
+    .dbtbl  { fill: #fff8e1; stroke: #ffd54f; stroke-width: 1; }
+    .dbtbl-new { fill: #e8f4fd; stroke: #0d6efd; stroke-width: 1; }
+    .pdf    { fill: #f3e5ff; stroke: #9c27b0; stroke-width: 1.5; }
+    .seed   { fill: #d4edda; stroke: #5cb85c; stroke-width: 1.5; }
+    .arrow  { stroke: #888; stroke-width: 1.2; fill: none; marker-end: url(#arr); }
+    .hdr    { fill: #f0f0f0; stroke: #ccc; stroke-width: 1; }
+  </style>
+
+  <defs>
+    <marker id="arr" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+      <path d="M0,0 L7,3.5 L0,7 Z" fill="#888"/>
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="410" y="22" text-anchor="middle" class="title">Envelope Steward — Architecture</text>
+  <text x="410" y="36" text-anchor="middle" class="sub">.NET 10 · WinForms · SQLite · QuestPDF</text>
+
+  <!-- ═══ UI TABS ═══ -->
+  <rect x="10" y="46" width="800" height="22" rx="3" class="hdr"/>
+  <text x="410" y="62" text-anchor="middle" class="label">WinForms App — TabControl</text>
+
+  <!-- Tab boxes -->
+  <!-- Members -->
+  <rect x="10" y="74" width="150" height="170" rx="4" class="tab"/>
+  <text x="85" y="91" text-anchor="middle" class="label">Members</text>
+  <line x1="20" y1="96" x2="152" y2="96" stroke="#0d6efd" stroke-width="0.7"/>
+  <text x="18" y="110" class="detail">• DataGridView list</text>
+  <text x="18" y="123" class="detail">• Search / filter bar</text>
+  <text x="18" y="136" class="detail">• Add / Edit / Delete</text>
+  <text x="18" y="149" class="detail">• MemberEditForm dialog</text>
+  <text x="18" y="162" class="detail">• CSV import (dynamic)</text>
+  <text x="18" y="175" class="detail">• Flags: Active, FullMember</text>
+  <text x="18" y="188" class="detail">  ShutIn</text>
+  <text x="18" y="201" class="detail">• Any extra CSV columns</text>
+  <text x="18" y="214" class="detail">  added automatically</text>
+  <text x="18" y="230" class="detail" style="fill:#0d6efd">→ Members table</text>
+
+  <!-- Offering Types -->
+  <rect x="168" y="74" width="150" height="170" rx="4" class="tab"/>
+  <text x="243" y="91" text-anchor="middle" class="label">Offering Types</text>
+  <line x1="178" y1="96" x2="310" y2="96" stroke="#0d6efd" stroke-width="0.7"/>
+  <text x="176" y="110" class="detail">• List with code + name</text>
+  <text x="176" y="123" class="detail">• Add / Edit / Delete</text>
+  <text x="176" y="136" class="detail">• TaxReceiptable flag</text>
+  <text x="176" y="149" class="detail">  (controls what shows</text>
+  <text x="176" y="162" class="detail">   on tax receipts)</text>
+  <text x="176" y="175" class="detail">• CSV import (dynamic)</text>
+  <text x="176" y="188" class="detail">• Extra CSV columns</text>
+  <text x="176" y="201" class="detail">  added automatically</text>
+  <text x="176" y="230" class="detail" style="fill:#0d6efd">→ OfferingTypes table</text>
+
+  <!-- Donations -->
+  <rect x="326" y="74" width="150" height="170" rx="4" class="tab"/>
+  <text x="401" y="91" text-anchor="middle" class="label">Donations</text>
+  <line x1="336" y1="96" x2="468" y2="96" stroke="#0d6efd" stroke-width="0.7"/>
+  <text x="334" y="110" class="detail">• Entry form (top panel)</text>
+  <text x="334" y="123" class="detail">  Member lookup by</text>
+  <text x="334" y="136" class="detail">  env # or name</text>
+  <text x="334" y="149" class="detail">  Offering Type dropdown</text>
+  <text x="334" y="162" class="detail">  Amount + Date + Notes</text>
+  <text x="334" y="175" class="detail">• Filter by Year / Member</text>
+  <text x="334" y="188" class="detail">• Edit / Delete row</text>
+  <text x="334" y="201" class="detail">• DonationEditForm dialog</text>
+  <text x="334" y="230" class="detail" style="fill:#0d6efd">→ Donations table</text>
+
+  <!-- Reports -->
+  <rect x="484" y="74" width="150" height="170" rx="4" class="tab"/>
+  <text x="559" y="91" text-anchor="middle" class="label">Reports</text>
+  <line x1="494" y1="96" x2="626" y2="96" stroke="#0d6efd" stroke-width="0.7"/>
+  <text x="492" y="110" class="detail">• Year + Period selector</text>
+  <text x="492" y="123" class="detail">  Annual / Quarterly /</text>
+  <text x="492" y="136" class="detail">  Monthly</text>
+  <text x="492" y="149" class="detail">• By Member summary</text>
+  <text x="492" y="162" class="detail">• By Offering Type</text>
+  <text x="492" y="175" class="detail">• Tax Receipt Preview</text>
+  <text x="492" y="188" class="detail">• Export CSV</text>
+  <text x="492" y="201" class="detail">• Generate PDF Receipts</text>
+  <text x="492" y="214" class="detail">  (batch, all members)</text>
+  <text x="492" y="230" class="detail" style="fill:#9c27b0">→ PdfReceiptService</text>
+
+  <!-- Settings -->
+  <rect x="642" y="74" width="168" height="170" rx="4" class="tab"/>
+  <text x="726" y="91" text-anchor="middle" class="label">Church Settings</text>
+  <line x1="652" y1="96" x2="802" y2="96" stroke="#0d6efd" stroke-width="0.7"/>
+  <text x="650" y="110" class="detail">• Church name + address</text>
+  <text x="650" y="123" class="detail">• CRA Reg. # (RR0001)</text>
+  <text x="650" y="136" class="detail">• Authorized signer</text>
+  <text x="650" y="149" class="detail">• Church logo (PNG/JPG)</text>
+  <text x="650" y="162" class="detail">• Next receipt # seed</text>
+  <text x="650" y="175" class="detail">• Saved immediately</text>
+  <text x="650" y="188" class="detail">  to ChurchSettings</text>
+  <text x="650" y="201" class="detail">  table (key/value)</text>
+  <text x="650" y="230" class="detail" style="fill:#0d6efd">→ ChurchSettings table</text>
+
+  <!-- arrows tabs → db -->
+  <path d="M85,244 L85,260"  class="arrow"/>
+  <path d="M243,244 L243,260" class="arrow"/>
+  <path d="M401,244 L401,260" class="arrow"/>
+  <path d="M726,244 L726,260" class="arrow"/>
+
+  <!-- ═══ DATABASE ═══ -->
+  <rect x="10" y="260" width="800" height="150" rx="4" class="db"/>
+  <text x="410" y="278" text-anchor="middle" class="label">SQLite Database — Data/envelopes.db</text>
+  <line x1="20" y1="284" x2="802" y2="284" stroke="#ffc107" stroke-width="0.7"/>
+
+  <rect x="20" y="290" width="148" height="108" rx="3" class="dbtbl"/>
+  <text x="94" y="304" text-anchor="middle" class="label">Members</text>
+  <text x="94" y="316" text-anchor="middle" class="detail">Id · EnvelopeNumber</text>
+  <text x="94" y="328" text-anchor="middle" class="detail">FirstName · LastName</text>
+  <text x="94" y="340" text-anchor="middle" class="detail">StreetAddress · City</text>
+  <text x="94" y="352" text-anchor="middle" class="detail">Province · PostalCode</text>
+  <text x="94" y="364" text-anchor="middle" class="detail">HomePhone · Email</text>
+  <text x="94" y="376" text-anchor="middle" class="detail">FullMember · ShutIn · Active</text>
+  <text x="94" y="388" text-anchor="middle" class="detail" style="fill:#0d6efd">+ dynamic CSV columns</text>
+
+  <rect x="176" y="290" width="148" height="108" rx="3" class="dbtbl"/>
+  <text x="250" y="304" text-anchor="middle" class="label">OfferingTypes</text>
+  <text x="250" y="316" text-anchor="middle" class="detail">Id · Name (code)</text>
+  <text x="250" y="328" text-anchor="middle" class="detail">Description</text>
+  <text x="250" y="340" text-anchor="middle" class="detail">TaxReceiptable</text>
+  <text x="250" y="352" text-anchor="middle" class="detail" style="fill:#0d6efd">+ dynamic CSV columns</text>
+
+  <rect x="332" y="290" width="148" height="108" rx="3" class="dbtbl"/>
+  <text x="406" y="304" text-anchor="middle" class="label">Donations</text>
+  <text x="406" y="316" text-anchor="middle" class="detail">Id · MemberId (FK)</text>
+  <text x="406" y="328" text-anchor="middle" class="detail">OfferingTypeId (FK)</text>
+  <text x="406" y="340" text-anchor="middle" class="detail">Amount · Date · Notes</text>
+
+  <rect x="488" y="290" width="148" height="108" rx="3" class="dbtbl-new"/>
+  <text x="562" y="304" text-anchor="middle" class="label">ChurchSettings</text>
+  <text x="562" y="316" text-anchor="middle" class="detail">Key / Value</text>
+  <text x="562" y="328" text-anchor="middle" class="detail">(ChurchName, Address,</text>
+  <text x="562" y="340" text-anchor="middle" class="detail">RegNumber, LogoPath,</text>
+  <text x="562" y="352" text-anchor="middle" class="detail">NextReceiptNumber…)</text>
+
+  <rect x="644" y="290" width="156" height="108" rx="3" class="dbtbl-new"/>
+  <text x="722" y="304" text-anchor="middle" class="label">Receipts</text>
+  <text x="722" y="316" text-anchor="middle" class="detail">Id · ReceiptNumber</text>
+  <text x="722" y="328" text-anchor="middle" class="detail">MemberId · TaxYear</text>
+  <text x="722" y="340" text-anchor="middle" class="detail">TotalAmount · DateIssued</text>
+  <text x="722" y="352" text-anchor="middle" class="detail">PdfPath</text>
+
+  <!-- ═══ PDF SERVICE ═══ -->
+  <rect x="10" y="424" width="420" height="110" rx="4" class="pdf"/>
+  <text x="220" y="442" text-anchor="middle" class="label">Services/PdfReceiptService.cs — QuestPDF</text>
+  <line x1="20" y1="448" x2="422" y2="448" stroke="#9c27b0" stroke-width="0.7"/>
+  <text x="18" y="463" class="detail">• CRA-compliant tax receipt layout</text>
+  <text x="18" y="477" class="detail">• 3 identical copies per page (church copy + donor copy + spare)</text>
+  <text x="18" y="491" class="detail">• Church name, address, CRA Reg #, logo in header</text>
+  <text x="18" y="505" class="detail">• Member name/address, Envelope #, Year total, Receipt #</text>
+  <text x="18" y="519" class="detail">• Batch mode: one PDF per donor, saved to My Documents/EnvelopeSteward/Receipts_YYYY/</text>
+
+  <!-- ═══ SEED DATA ═══ -->
+  <rect x="440" y="424" width="370" height="110" rx="4" class="seed"/>
+  <text x="625" y="442" text-anchor="middle" class="label">SeedData/ — CSV Import (Dynamic)</text>
+  <line x1="450" y1="448" x2="802" y2="448" stroke="#5cb85c" stroke-width="0.7"/>
+  <text x="448" y="463" class="detail">OBVU_Church_Membership.csv → Members table</text>
+  <text x="448" y="477" class="detail">OBVU_Offering_Types.csv → OfferingTypes table</text>
+  <text x="448" y="491" class="detail">Any CSV column that doesn't match a known field</text>
+  <text x="448" y="505" class="detail">is auto-sanitized and added to the table on first import.</text>
+  <text x="448" y="519" class="detail">Use File → Import CSV menus to load.</text>
+
+  <!-- arrows db → pdf -->
+  <path d="M562,410 L340,424" class="arrow"/>
+  <!-- arrows seed → db -->
+  <path d="M625,424 L200,410" class="arrow"/>
+
+  <!-- legend -->
+  <rect x="10" y="546" width="12" height="12" class="tab" rx="2"/>
+  <text x="26" y="556" class="detail">UI Tab</text>
+  <rect x="80" y="546" width="12" height="12" class="db" rx="2"/>
+  <text x="96" y="556" class="detail">Database</text>
+  <rect x="160" y="546" width="12" height="12" class="pdf" rx="2"/>
+  <text x="176" y="556" class="detail">PDF Service</text>
+  <rect x="250" y="546" width="12" height="12" class="seed" rx="2"/>
+  <text x="266" y="556" class="detail">Seed / Import</text>
+  <rect x="350" y="546" width="12" height="12" class="dbtbl-new" rx="2"/>
+  <text x="366" y="556" class="detail">New table</text>
+</svg>
