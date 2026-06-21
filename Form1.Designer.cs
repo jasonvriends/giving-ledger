@@ -10,10 +10,6 @@ namespace Envelope_Steward
             base.Dispose(disposing);
         }
 
-        // Tab pages
-        private TabControl tabMain;
-        private TabPage tabMembers, tabOfferingTypes, tabDonations, tabReports, tabSettings;
-
         // Members tab
         private DataGridView dgvMembers;
         private TextBox txtMemberSearch;
@@ -42,18 +38,39 @@ namespace Envelope_Steward
         // Congregation menu (rebuilt dynamically)
         private ToolStripMenuItem _congMenu = null!;
 
-        // Status
+        // Status bar
         private StatusStrip statusStrip1;
         private ToolStripStatusLabel toolStripStatusLabel1;
         private ToolStripStatusLabel lblStatYtd, lblStatDonors, lblStatReceipt;
 
+        // Sidebar nav
+        private readonly Theme.NavButton[] _navBtns = new Theme.NavButton[5];
+
+        // Sidebar stat labels (updated by RefreshStats)
+        private Label lblSideYtdValue = null!;
+        private Label lblSideDonors   = null!;
+        private Label lblSideReceipt  = null!;
+        private Label lblBrandName    = null!;
+        private Label lblBrandCity    = null!;
+
+        // Page header labels
+        private Label lblPageTitle = null!;
+        private Label lblPageDesc  = null!;
+
+        // View panel container (Dock=Fill inside pnlMain)
+        private Panel pnlContent = null!;
+
+        // Maps nav id → content panel (populated in BuildUI)
+        private readonly Dictionary<string, Panel> _views = [];
+
         private void InitializeComponent()
         {
             SuspendLayout();
-            Text = "Giving Ledger";
-            ClientSize = new Size(1280, 760);
-            MinimumSize = new Size(900, 600);
-            StartPosition = FormStartPosition.CenterScreen;
+            Text             = "Giving Ledger";
+            ClientSize       = new Size(1280, 760);
+            MinimumSize      = new Size(940, 600);
+            StartPosition    = FormStartPosition.CenterScreen;
+            BackColor        = Theme.GL.App;
             ResumeLayout(false);
         }
     }

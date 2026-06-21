@@ -55,6 +55,11 @@ namespace Envelope_Steward
                 lblStatYtd.Text     = $"YTD {year}: {ytd:C0}";
                 lblStatDonors.Text  = $"Active donors: {donors}";
                 lblStatReceipt.Text = $"Next receipt #: {nextRec}";
+
+                // Sidebar stat cards
+                if (lblSideYtdValue  != null) lblSideYtdValue.Text = ytd.ToString("C0");
+                if (lblSideDonors    != null) lblSideDonors.Text   = donors.ToString();
+                if (lblSideReceipt   != null) lblSideReceipt.Text  = $"#{nextRec}";
             }
             catch { /* DB may not be ready on first paint */ }
         }
@@ -63,9 +68,8 @@ namespace Envelope_Steward
 
         private void BuildUI()
         {
-            // Menu
-            var menu = new MenuStrip();
-            // ── File ──────────────────────────────────────────────────────────
+            // ── Menu ───────────────────────────────────────────────────────────
+            var menu = new MenuStrip { BackColor = Theme.GL.Surface2 };
             var fileMenu    = new ToolStripMenuItem("File");
             var miImport    = new ToolStripMenuItem("Import");
             var miImportMembers   = new ToolStripMenuItem("Members from CSV…");
@@ -91,99 +95,557 @@ namespace Envelope_Steward
             });
             menu.Items.Add(fileMenu);
 
-            // ── Congregation — rebuilt dynamically each time it opens ──────────
             _congMenu = new ToolStripMenuItem("Congregation");
             _congMenu.DropDownOpening += RebuildCongregationMenu;
             menu.Items.Add(_congMenu);
 
-            // ── Help ──────────────────────────────────────────────────────────
             var helpMenu = new ToolStripMenuItem("Help");
             var miAbout  = new ToolStripMenuItem("About Giving Ledger…");
             miAbout.Click += (_, _) => ShowAbout();
             helpMenu.DropDownItems.Add(miAbout);
             menu.Items.Add(helpMenu);
 
-            // Status bar — left: operation message, right: live stats
-            statusStrip1 = new StatusStrip();
-            toolStripStatusLabel1 = new ToolStripStatusLabel("Ready") { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
-            lblStatYtd     = new ToolStripStatusLabel("") { BorderSides = ToolStripStatusLabelBorderSides.Left, Padding = new Padding(8, 0, 4, 0) };
-            lblStatDonors  = new ToolStripStatusLabel("") { BorderSides = ToolStripStatusLabelBorderSides.Left, Padding = new Padding(8, 0, 4, 0) };
-            lblStatReceipt = new ToolStripStatusLabel("") { BorderSides = ToolStripStatusLabelBorderSides.Left, Padding = new Padding(8, 0, 8, 0) };
+            // ── Status bar ─────────────────────────────────────────────────────
+            statusStrip1 = new StatusStrip { BackColor = Theme.GL.Surface2, SizingGrip = false };
+            toolStripStatusLabel1 = new ToolStripStatusLabel("Ready") { Spring = true, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Theme.GL.InkSoft };
+            lblStatYtd     = new ToolStripStatusLabel("") { BorderSides = ToolStripStatusLabelBorderSides.Left, Padding = new Padding(8, 0, 4, 0), ForeColor = Theme.GL.InkSoft };
+            lblStatDonors  = new ToolStripStatusLabel("") { BorderSides = ToolStripStatusLabelBorderSides.Left, Padding = new Padding(8, 0, 4, 0), ForeColor = Theme.GL.InkSoft };
+            lblStatReceipt = new ToolStripStatusLabel("") { BorderSides = ToolStripStatusLabelBorderSides.Left, Padding = new Padding(8, 0, 8, 0), ForeColor = Theme.GL.InkSoft };
             statusStrip1.Items.AddRange(new ToolStripItem[] { toolStripStatusLabel1, lblStatYtd, lblStatDonors, lblStatReceipt });
 
-            // Tab control
-            tabMain = new TabControl { Dock = DockStyle.Fill };
-            tabMembers = new TabPage("Members");
-            tabOfferingTypes = new TabPage("Offering Types");
-            tabDonations = new TabPage("Donations");
-            tabReports = new TabPage("Reports");
-            tabSettings = new TabPage("Settings");
+            // ── Body = sidebar (left) + main area (fill) ────────────────────────
+            var pnlBody = new Panel { Dock = DockStyle.Fill, BackColor = Theme.GL.App };
+            pnlBody.SuspendLayout();
 
-            BuildMembersTab();
-            BuildOfferingTypesTab();
-            BuildDonationsTab();
-            BuildReportsTab();
-            BuildSettingsTab();
+            // Build view panels first (BuildMain sets up pnlContent)
+            var main    = BuildMain();
+            var sidebar = BuildSidebar();
 
-            tabMain.TabPages.AddRange(new[] { tabMembers, tabOfferingTypes, tabDonations, tabReports, tabSettings });
+            _views["members"]   = BuildMembersPanel();
+            _views["offerings"] = BuildOfferingTypesPanel();
+            _views["donations"] = BuildDonationsPanel();
+            _views["reports"]   = BuildReportsPanel();
+            _views["settings"]  = BuildSettingsPanel();
 
-            Controls.Add(tabMain);
+            foreach (var v in _views.Values) { v.Dock = DockStyle.Fill; pnlContent.Controls.Add(v); }
+
+            pnlBody.Controls.Add(main);    // Fill — added first
+            pnlBody.Controls.Add(sidebar); // Left — processed first, pushes main right
+            pnlBody.ResumeLayout(false);
+
+            Controls.Add(pnlBody);
             Controls.Add(menu);
             Controls.Add(statusStrip1);
             MainMenuStrip = menu;
+
+            ShowView("members");
         }
 
-        // ── Members Tab ──────────────────────────────────────────────────────
+        // ── Shell: sidebar ───────────────────────────────────────────────────
 
-        private void BuildMembersTab()
+        private Panel BuildSidebar()
         {
-            var toolbar = new FlowLayoutPanel
+            var sidebar = new Panel
             {
-                Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                FlowDirection = FlowDirection.LeftToRight, WrapContents = false,
-                Padding = new Padding(4), BackColor = SystemColors.Control
+                Dock      = DockStyle.Left,
+                Width     = 236,
+                BackColor = Theme.GL.Surface2,
+            };
+            // Right border hairline
+            sidebar.Paint += (_, e) =>
+            {
+                using var pen = new Pen(Theme.GL.Line);
+                e.Graphics.DrawLine(pen, sidebar.Width - 1, 0, sidebar.Width - 1, sidebar.Height);
             };
 
-            toolbar.Controls.Add(new Label { Text = "Search:", AutoSize = true, Anchor = AnchorStyles.None, Margin = new Padding(2, 6, 2, 0) });
-            txtMemberSearch = new TextBox { Width = 220, Margin = new Padding(2, 4, 2, 4) };
-            toolbar.Controls.Add(txtMemberSearch);
+            // ── Brand block (top) ──────────────────────────────────────────────
+            var pnlBrand = new Panel
+            {
+                Dock      = DockStyle.Top,
+                Height    = 76,
+                BackColor = Color.Transparent,
+            };
 
-            Button TB(string t) { var b = new Button { Text = t, AutoSize = true, Margin = new Padding(2, 4, 2, 4) }; toolbar.Controls.Add(b); return b; }
-            var btnSearch = TB("Search");
-            var btnClear  = TB("Clear");
-            toolbar.Controls.Add(new Label { Text = "|", AutoSize = true, Margin = new Padding(6, 6, 6, 0), ForeColor = Color.Silver });
-            var btnAdd    = TB("Add");
-            var btnEdit   = TB("Edit");
-            var btnDelete = TB("Delete");
-            toolbar.Controls.Add(new Label { Text = "|", AutoSize = true, Margin = new Padding(6, 6, 6, 0), ForeColor = Color.Silver });
-            var btnLabels = TB("Print Mailing Labels (PDF)");
+            // Green logo tile: 40 × 40, rounded, church icon in white
+            var logoTile = new Panel { Size = new Size(40, 40), Location = new Point(14, 18) };
+            logoTile.Paint += (_, e) =>
+            {
+                var g = e.Graphics;
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                using var path = Theme.GL.RoundedRect(new Rectangle(0, 0, 40, 40), 10);
+                using var br   = new System.Drawing.Drawing2D.LinearGradientBrush(
+                    new Point(0, 0), new Point(0, 40), Theme.GL.Primary, Theme.GL.Primary700);
+                g.FillPath(br, path);
+                Theme.Icons.Draw(g, "church", new RectangleF(10, 10, 20, 20), Color.White, 1.5f);
+            };
 
-            btnSearch.Click += (_, _) => RefreshMembers(txtMemberSearch.Text);
-            btnClear.Click  += (_, _) => { txtMemberSearch.Clear(); RefreshMembers(); };
+            lblBrandName = new Label
+            {
+                Location  = new Point(62, 18),
+                Size      = new Size(160, 22),
+                Font      = Theme.GL.Serif(11f, FontStyle.Bold),
+                ForeColor = Theme.GL.Ink,
+                Text      = DataAccess.CurrentChurch,
+                AutoSize  = false,
+            };
+            lblBrandCity = new Label
+            {
+                Location  = new Point(62, 42),
+                Size      = new Size(160, 16),
+                Font      = Theme.GL.Sans(8.5f),
+                ForeColor = Theme.GL.InkFaint,
+                Text      = " ",
+                AutoSize  = false,
+            };
+            pnlBrand.Controls.AddRange(new Control[] { logoTile, lblBrandName, lblBrandCity });
+
+            // ── Stats footer (bottom) ──────────────────────────────────────────
+            var pnlStats = new Panel
+            {
+                Dock      = DockStyle.Bottom,
+                Height    = 128,
+                BackColor = Color.Transparent,
+                Padding   = new Padding(10, 8, 10, 10),
+            };
+
+            // YTD card
+            var ytdCard = new Panel
+            {
+                Dock      = DockStyle.Top,
+                Height    = 52,
+                BackColor = Theme.GL.Surface,
+                Margin    = new Padding(0, 0, 0, 6),
+                Padding   = new Padding(10, 6, 10, 4),
+            };
+            ytdCard.Paint += (_, e) =>
+            {
+                using var pen = new Pen(Theme.GL.Line);
+                e.Graphics.DrawRectangle(pen, 0, 0, ytdCard.Width - 1, ytdCard.Height - 1);
+            };
+            var lblYtdKey = new Label
+            {
+                Text      = $"Giving YTD {DateTime.Today.Year}",
+                Font      = Theme.GL.Sans(7.5f),
+                ForeColor = Theme.GL.InkFaint,
+                AutoSize  = true,
+                Location  = new Point(10, 7),
+            };
+            lblSideYtdValue = new Label
+            {
+                Text      = "—",
+                Font      = Theme.GL.Serif(14f, FontStyle.Bold),
+                ForeColor = Theme.GL.Primary,
+                AutoSize  = true,
+                Location  = new Point(10, 25),
+            };
+            ytdCard.Controls.AddRange(new Control[] { lblYtdKey, lblSideYtdValue });
+
+            // 2-up row: donors + receipt #
+            var row2 = new TableLayoutPanel
+            {
+                Dock        = DockStyle.Fill,
+                ColumnCount = 2,
+                RowCount    = 1,
+                BackColor   = Color.Transparent,
+                Padding     = new Padding(0, 6, 0, 0),
+            };
+            row2.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+            row2.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+
+            Panel SmallCard(out Label keyLbl, out Label valLbl)
+            {
+                var card = new Panel { Dock = DockStyle.Fill, BackColor = Theme.GL.Surface, Margin = new Padding(0, 0, 4, 0) };
+                card.Paint += (_, e) =>
+                {
+                    using var pen = new Pen(Theme.GL.Line);
+                    e.Graphics.DrawRectangle(pen, 0, 0, card.Width - 1, card.Height - 1);
+                };
+                keyLbl = new Label { AutoSize = true, Font = Theme.GL.Sans(7f), ForeColor = Theme.GL.InkFaint, Location = new Point(8, 6) };
+                valLbl = new Label { AutoSize = true, Font = Theme.GL.Serif(12f, FontStyle.Bold), ForeColor = Theme.GL.Ink, Location = new Point(8, 20) };
+                card.Controls.AddRange(new Control[] { keyLbl, valLbl });
+                return card;
+            }
+            var donorsCard  = SmallCard(out var lblDonorsKey, out lblSideDonors);
+            var receiptCard = SmallCard(out var lblReceiptKey, out lblSideReceipt);
+            donorsCard.Margin  = new Padding(0, 0, 3, 0);
+            receiptCard.Margin = new Padding(3, 0, 0, 0);
+            lblDonorsKey.Text  = "Active donors";
+            lblReceiptKey.Text = "Next receipt";
+            lblSideReceipt.ForeColor = Theme.GL.Accent700;
+
+            row2.Controls.Add(donorsCard,  0, 0);
+            row2.Controls.Add(receiptCard, 1, 0);
+
+            pnlStats.Controls.Add(row2);
+            pnlStats.Controls.Add(ytdCard);
+
+            // ── Nav items (fill) ───────────────────────────────────────────────
+            var pnlNav = new Panel
+            {
+                Dock      = DockStyle.Fill,
+                BackColor = Color.Transparent,
+                Padding   = new Padding(6, 8, 6, 0),
+            };
+
+            (string id, string icon, string label)[] navItems =
+            [
+                ("members",   "members", "Members"),
+                ("offerings", "tags",    "Offering Types"),
+                ("donations", "donate",  "Donations"),
+                ("reports",   "reports", "Reports"),
+                ("settings",  "settings","Settings"),
+            ];
+
+            for (int i = 0; i < navItems.Length; i++)
+            {
+                var (id, icon, label) = navItems[i];
+                var btn = new Theme.NavButton
+                {
+                    NavId    = id,
+                    IconName = icon,
+                    Text     = label,
+                    Dock     = DockStyle.Top,
+                };
+                var captureId = id;
+                btn.Activated += (_, _) => ShowView(captureId);
+                _navBtns[i] = btn;
+                pnlNav.Controls.Add(btn);
+            }
+            // Reverse so Dock=Top stacks in declaration order
+            var btns = pnlNav.Controls.Cast<Control>().ToArray();
+            pnlNav.Controls.Clear();
+            foreach (var b in btns.Reverse()) pnlNav.Controls.Add(b);
+
+            // WinForms dock layout processes controls in reverse-add order.
+            // Add Fill first (processed last → fills remainder), then Bottom, then Top last (processed first → claims top strip).
+            sidebar.Controls.Add(pnlNav);    // Fill   — added first, processed last
+            sidebar.Controls.Add(pnlStats);  // Bottom — added second
+            sidebar.Controls.Add(pnlBrand);  // Top    — added last, processed first
+            return sidebar;
+        }
+
+        // ── Shell: main area ─────────────────────────────────────────────────
+
+        private Panel BuildMain()
+        {
+            var main = new Panel { Dock = DockStyle.Fill, BackColor = Theme.GL.App };
+            main.SuspendLayout();
+
+            // Page header — h1 + description
+            var pnlPageHead = new Panel
+            {
+                Dock      = DockStyle.Top,
+                Height    = 64,
+                BackColor = Theme.GL.App,
+                Padding   = new Padding(24, 0, 24, 0),
+            };
+            pnlPageHead.Paint += (_, e) =>
+            {
+                using var pen = new Pen(Theme.GL.Line);
+                e.Graphics.DrawLine(pen, 0, pnlPageHead.Height - 1, pnlPageHead.Width, pnlPageHead.Height - 1);
+            };
+
+            lblPageTitle = new Label
+            {
+                AutoSize  = false,
+                Dock      = DockStyle.Top,
+                Height    = 36,
+                Font      = Theme.GL.Serif(16f, FontStyle.Bold),
+                ForeColor = Theme.GL.Ink,
+                Text      = "Members",
+                TextAlign = ContentAlignment.BottomLeft,
+                Padding   = new Padding(0),
+            };
+            lblPageDesc = new Label
+            {
+                AutoSize  = false,
+                Dock      = DockStyle.Top,
+                Height    = 18,
+                Font      = Theme.GL.Sans(9f),
+                ForeColor = Theme.GL.InkSoft,
+                Text      = "Donor roster, keyed by envelope number",
+                TextAlign = ContentAlignment.TopLeft,
+                Padding   = new Padding(0),
+            };
+            // Add desc first (bottom of the Top stack), then title
+            pnlPageHead.Controls.Add(lblPageDesc);
+            pnlPageHead.Controls.Add(lblPageTitle);
+
+            // Content area — swappable view panels live here
+            pnlContent = new Panel { Dock = DockStyle.Fill, BackColor = Theme.GL.App };
+
+            main.Controls.Add(pnlContent);
+            main.Controls.Add(pnlPageHead);
+            main.ResumeLayout(false);
+            return main;
+        }
+
+        // ── View switching ───────────────────────────────────────────────────
+
+        private static readonly Dictionary<string, (string title, string desc)> _pageMeta = new()
+        {
+            ["members"]   = ("Members",        "Donor roster, keyed by envelope number"),
+            ["offerings"] = ("Offering Types",  "Funds and categories for giving"),
+            ["donations"] = ("Donations",       "Record gifts and review history"),
+            ["reports"]   = ("Reports",         "Totals, trends, and CRA tax receipts"),
+            ["settings"]  = ("Settings",        "Church details and receipt configuration"),
+        };
+
+        private void ShowView(string id)
+        {
+            foreach (var v in _views.Values) v.Visible = false;
+            if (_views.TryGetValue(id, out var panel)) panel.Visible = true;
+
+            for (int i = 0; i < _navBtns.Length; i++)
+                if (_navBtns[i] != null) _navBtns[i].Active = (_navBtns[i].NavId == id);
+
+            if (_pageMeta.TryGetValue(id, out var meta))
+            {
+                lblPageTitle.Text = meta.title;
+                lblPageDesc.Text  = meta.desc;
+            }
+
+            // Update nav count chips on every switch
+            if (_navBtns[0] != null) _navBtns[0].Count = dgvMembers?.Rows.Count;
+            if (_navBtns[1] != null) _navBtns[1].Count = dgvOfferingTypes?.Rows.Count;
+        }
+
+        // Updates the sidebar brand block when congregation changes.
+        private void UpdateBrand()
+        {
+            if (lblBrandName == null) return;
+            lblBrandName.Text = DataAccess.CurrentChurch;
+        }
+
+        // ── Members Panel ────────────────────────────────────────────────────
+
+        private Panel BuildMembersPanel()
+        {
+            var panel = new Panel { BackColor = Theme.GL.App };
+
+            // ── Toolbar ────────────────────────────────────────────────────────
+            var (toolbar, leftFlow) = Theme.GL.MakeToolbar(52);
+
+            // Search box with icon
+            var searchWrap = new Panel
+            {
+                Width     = 272,
+                Height    = 34,
+                Margin    = new Padding(0, 9, 8, 9),
+                BackColor = Theme.GL.Surface,
+            };
+            searchWrap.Paint += (_, e) =>
+            {
+                using var pen = new Pen(Theme.GL.LineStrong);
+                e.Graphics.DrawRectangle(pen, 0, 0, searchWrap.Width - 1, searchWrap.Height - 1);
+            };
+            var srchIcon = new Panel { Size = new Size(30, 34), Dock = DockStyle.Left };
+            srchIcon.Paint += (_, e) =>
+                Theme.Icons.Draw(e.Graphics, "search", new RectangleF(7, 8, 16, 16), Theme.GL.InkFaint);
+            txtMemberSearch = new TextBox
+            {
+                Dock        = DockStyle.Fill,
+                BorderStyle = BorderStyle.None,
+                BackColor   = Theme.GL.Surface,
+                Font        = Theme.GL.Sans(9f),
+                ForeColor   = Theme.GL.Ink,
+            };
+            searchWrap.Controls.AddRange(new Control[] { txtMemberSearch, srchIcon });
+
+            var sep = new Label { Width = 1, Height = 22, Margin = new Padding(4, 15, 4, 0), BackColor = Theme.GL.LineStrong };
+
+            var btnAdd    = Theme.GL.MakeBtn("Add",    Theme.GL.BtnKind.Default);
+            var btnEdit   = Theme.GL.MakeBtn("Edit",   Theme.GL.BtnKind.Default);
+            var btnDelete = Theme.GL.MakeBtn("Delete", Theme.GL.BtnKind.Danger);
+            btnAdd.Margin = btnEdit.Margin = btnDelete.Margin = new Padding(2, 10, 2, 10);
+
+            leftFlow.Controls.AddRange(new Control[] { searchWrap, sep, btnAdd, btnEdit, btnDelete });
+
+            // Right-side: Print Mailing Labels
+            var btnLabels = Theme.GL.MakeBtn("Print Mailing Labels", Theme.GL.BtnKind.Default);
+            btnLabels.Margin = new Padding(2, 10, 2, 10);
+            var rightFlow = new FlowLayoutPanel
+            {
+                Dock          = DockStyle.Right,
+                AutoSize      = true,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents  = false,
+                Padding       = new Padding(0, 0, 8, 0),
+            };
+            rightFlow.Controls.Add(btnLabels);
+            toolbar.Controls.Add(rightFlow);
+
+            // Event wiring
             txtMemberSearch.KeyDown += (_, e) => { if (e.KeyCode == Keys.Enter) RefreshMembers(txtMemberSearch.Text); };
             btnAdd.Click    += MemberAdd_Click;
             btnEdit.Click   += MemberEdit_Click;
             btnDelete.Click += MemberDelete_Click;
             btnLabels.Click += PrintMailingLabels_Click;
 
+            // ── Grid ───────────────────────────────────────────────────────────
             dgvMembers = MakeGrid();
-            dgvMembers.CellDoubleClick += (_, _) => MemberEdit_Click(null, EventArgs.Empty);
-            dgvMembers.MouseDown += GridSelectRowOnRightClick;
+            Theme.GL.ThemeDgv(dgvMembers);
+            dgvMembers.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None;
+            dgvMembers.CellPainting     += MembersGrid_CellPainting;
+            dgvMembers.SelectionChanged += (_, _) => UpdateMembersFooter();
+            dgvMembers.CellDoubleClick  += (_, _) => MemberEdit_Click(null, EventArgs.Empty);
+            dgvMembers.MouseDown        += GridSelectRowOnRightClick;
+
             var ctxMembers = new ContextMenuStrip();
             ctxMembers.Items.Add("Edit Member",   null, MemberEdit_Click);
             ctxMembers.Items.Add(new ToolStripSeparator());
             ctxMembers.Items.Add("Delete Member", null, MemberDelete_Click);
             dgvMembers.ContextMenuStrip = ctxMembers;
 
-            tabMembers.Controls.Add(dgvMembers);
-            tabMembers.Controls.Add(toolbar);
+            // ── Footer ─────────────────────────────────────────────────────────
+            var pnlFoot = new Panel { Dock = DockStyle.Bottom, Height = 28, BackColor = Theme.GL.Surface2 };
+            pnlFoot.Paint += (_, e) =>
+            {
+                using var pen = new Pen(Theme.GL.Line);
+                e.Graphics.DrawLine(pen, 0, 0, pnlFoot.Width, 0);
+            };
+            _lblMembersFooter = new Label
+            {
+                Dock      = DockStyle.Fill,
+                AutoSize  = false,
+                Font      = Theme.GL.Sans(8.5f),
+                ForeColor = Theme.GL.InkFaint,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding   = new Padding(12, 0, 0, 0),
+            };
+            pnlFoot.Controls.Add(_lblMembersFooter);
+
+            panel.Controls.Add(dgvMembers);
+            panel.Controls.Add(pnlFoot);
+            panel.Controls.Add(toolbar);
+            return panel;
+        }
+
+        private Label _lblMembersFooter = null!;
+
+        private void MembersGrid_CellPainting(object? sender, DataGridViewCellPaintingEventArgs e)
+        {
+            if (e.RowIndex < 0 || e.ColumnIndex < 0) return;
+            if (dgvMembers.Columns[e.ColumnIndex].Name != "Status") return;
+
+            e.Paint(e.CellBounds, DataGridViewPaintParts.Background | DataGridViewPaintParts.SelectionBackground);
+
+            string raw   = e.Value?.ToString() ?? "";
+            string[] parts = raw.Split('|', StringSplitOptions.RemoveEmptyEntries);
+
+            var  g = e.Graphics!;
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            int  x = e.CellBounds.Left + 8;
+            int  y = e.CellBounds.Top  + (e.CellBounds.Height - 20) / 2;
+            const int PH = 20;
+
+            using var font = Theme.GL.Sans(7.5f, FontStyle.Bold);
+            foreach (string part in parts)
+            {
+                var (bg, fg, text) = part switch
+                {
+                    "Active"   => (Theme.GL.GoodBg,  Theme.GL.Good,    "Active"),
+                    "ShutIn"   => (Theme.GL.GoldBg,  Theme.GL.Gold,    "Shut-In"),
+                    "Inactive" => (Theme.GL.MutedBg,  Theme.GL.InkSoft, "Inactive"),
+                    _          => (Theme.GL.Surface2,  Theme.GL.InkFaint, part),
+                };
+                var sz = TextRenderer.MeasureText(g, text, font);
+                int pw  = sz.Width + 12;
+                var pr  = new Rectangle(x, y, pw, PH);
+                Theme.GL.FillRounded(g, pr, bg, PH / 2);
+                TextRenderer.DrawText(g, text, font, pr, fg,
+                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+                x += pw + 4;
+            }
+            e.Handled = true;
+        }
+
+        private void StyleMembersColumns()
+        {
+            var dgv = dgvMembers;
+            foreach (string c in new[] { "Id", "FullMember", "Province", "PostalCode" })
+                if (dgv.Columns.Contains(c)) dgv.Columns[c]!.Visible = false;
+
+            void C(string name, string header, int width,
+                   DataGridViewContentAlignment align = DataGridViewContentAlignment.MiddleLeft)
+            {
+                if (!dgv.Columns.Contains(name)) return;
+                var col = dgv.Columns[name]!;
+                col.HeaderText     = header;
+                col.Width          = width;
+                col.AutoSizeMode   = DataGridViewAutoSizeColumnMode.None;
+                col.DefaultCellStyle.Alignment = align;
+            }
+
+            C("EnvelopeNumber", "ENV #",   70,  DataGridViewContentAlignment.MiddleRight);
+            C("FirstName",      "FIRST",   90);
+            C("LastName",       "LAST",    110);
+            C("StreetAddress",  "ADDRESS", 160);
+            C("City",           "CITY",    110);
+            C("HomePhone",      "PHONE",   110);
+            C("Email",          "EMAIL",   160);
+            C("Active",         "ACTIVE",  1);   // hidden below
+            C("ShutIn",         "SH",      1);   // hidden below
+            C("Status",         "STATUS",  140);
+
+            // Hide the raw bool columns — Status column shows pills instead
+            foreach (string c in new[] { "Active", "ShutIn" })
+                if (dgv.Columns.Contains(c)) dgv.Columns[c]!.Visible = false;
+
+            // Env# — clay mono
+            if (dgv.Columns.Contains("EnvelopeNumber"))
+            {
+                var ec = dgv.Columns["EnvelopeNumber"]!;
+                ec.DefaultCellStyle.Font               = Theme.GL.Mono(9f);
+                ec.DefaultCellStyle.ForeColor          = Theme.GL.Accent700;
+                ec.DefaultCellStyle.SelectionForeColor = Theme.GL.Accent700;
+            }
+            // Muted secondary columns
+            foreach (string c in new[] { "StreetAddress", "HomePhone", "Email" })
+            {
+                if (!dgv.Columns.Contains(c)) continue;
+                dgv.Columns[c]!.DefaultCellStyle.ForeColor          = Theme.GL.InkFaint;
+                dgv.Columns[c]!.DefaultCellStyle.SelectionForeColor = Theme.GL.InkFaint;
+            }
+        }
+
+        private void UpdateMembersFooter()
+        {
+            if (_lblMembersFooter == null) return;
+            int total = dgvMembers.Rows.Count;
+            string msg = $"{total} member{(total == 1 ? "" : "s")}";
+            if (dgvMembers.SelectedRows.Count > 0)
+            {
+                var row = dgvMembers.SelectedRows[0];
+                var env = dgvMembers.Columns.Contains("EnvelopeNumber") ? row.Cells["EnvelopeNumber"].Value?.ToString() : "";
+                if (!string.IsNullOrEmpty(env)) msg += $"  ·  selected #{env}";
+            }
+            _lblMembersFooter.Text = msg;
         }
 
         private void RefreshMembers(string search = "")
         {
+            var dt = DataAccess.GetMembersDataTable(search);
+
+            // Add computed Status column for pill rendering
+            if (!dt.Columns.Contains("Status"))
+            {
+                dt.Columns.Add("Status", typeof(string));
+                foreach (System.Data.DataRow row in dt.Rows)
+                {
+                    bool active = row.Table.Columns.Contains("Active") && row["Active"] is true;
+                    bool shutIn = row.Table.Columns.Contains("ShutIn") && row["ShutIn"] is true;
+                    row["Status"] = active
+                        ? (shutIn ? "Active|ShutIn" : "Active")
+                        : (shutIn ? "Inactive|ShutIn" : "Inactive");
+                }
+            }
+
             dgvMembers.DataSource = null;
-            dgvMembers.DataSource = DataAccess.GetMembersDataTable(search);
-            if (dgvMembers.Columns.Contains("Id")) dgvMembers.Columns["Id"]!.Visible = false;
+            dgvMembers.DataSource = dt;
+            StyleMembersColumns();
+            UpdateMembersFooter();
+            if (_navBtns[0] != null) _navBtns[0].Count = dgvMembers.Rows.Count;
             SetStatus($"{dgvMembers.Rows.Count} member(s)");
         }
 
@@ -233,37 +695,40 @@ namespace Envelope_Steward
             catch (Exception ex) { ShowError("Could not delete: " + ex.Message); }
         }
 
-        // ── Offering Types Tab ───────────────────────────────────────────────
+        // ── Offering Types Panel ─────────────────────────────────────────────
 
-        private void BuildOfferingTypesTab()
+        private Panel BuildOfferingTypesPanel()
         {
-            var toolbar = new FlowLayoutPanel
-            {
-                Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                FlowDirection = FlowDirection.LeftToRight, WrapContents = false,
-                Padding = new Padding(4), BackColor = SystemColors.Control
-            };
+            var panel = new Panel { BackColor = Theme.GL.App };
 
-            Button TB(string t) { var b = new Button { Text = t, AutoSize = true, Margin = new Padding(2, 4, 2, 4) }; toolbar.Controls.Add(b); return b; }
-            var btnAdd    = TB("Add");
-            var btnEdit   = TB("Edit");
-            var btnDelete = TB("Delete");
+            var (toolbar, flow) = Theme.GL.MakeToolbar(52);
+            var btnAdd    = Theme.GL.MakeBtn("Add",    Theme.GL.BtnKind.Default);
+            var btnEdit   = Theme.GL.MakeBtn("Edit",   Theme.GL.BtnKind.Default);
+            var btnDelete = Theme.GL.MakeBtn("Delete", Theme.GL.BtnKind.Danger);
+            btnAdd.Margin = btnEdit.Margin = btnDelete.Margin = new Padding(2, 10, 2, 10);
+            flow.Controls.AddRange(new Control[] { btnAdd, btnEdit, btnDelete });
 
             btnAdd.Click    += OfferingTypeAdd_Click;
             btnEdit.Click   += OfferingTypeEdit_Click;
             btnDelete.Click += OfferingTypeDelete_Click;
 
             dgvOfferingTypes = MakeGrid();
+            Theme.GL.ThemeDgv(dgvOfferingTypes);
             dgvOfferingTypes.CellDoubleClick += (_, _) => OfferingTypeEdit_Click(null, EventArgs.Empty);
-            dgvOfferingTypes.MouseDown += GridSelectRowOnRightClick;
+            dgvOfferingTypes.MouseDown       += GridSelectRowOnRightClick;
+            dgvOfferingTypes.SelectionChanged += (_, _) =>
+            {
+                if (_navBtns[1] != null) _navBtns[1].Count = dgvOfferingTypes.Rows.Count;
+            };
             var ctxTypes = new ContextMenuStrip();
             ctxTypes.Items.Add("Edit Offering Type",   null, OfferingTypeEdit_Click);
             ctxTypes.Items.Add(new ToolStripSeparator());
             ctxTypes.Items.Add("Delete Offering Type", null, OfferingTypeDelete_Click);
             dgvOfferingTypes.ContextMenuStrip = ctxTypes;
 
-            tabOfferingTypes.Controls.Add(dgvOfferingTypes);
-            tabOfferingTypes.Controls.Add(toolbar);
+            panel.Controls.Add(dgvOfferingTypes);
+            panel.Controls.Add(toolbar);
+            return panel;
         }
 
         private void RefreshOfferingTypes()
@@ -301,9 +766,16 @@ namespace Envelope_Steward
             catch (Exception ex) { ShowError("Could not delete: " + ex.Message); }
         }
 
-        // ── Donations Tab ────────────────────────────────────────────────────
+        // ── Donations Panel ──────────────────────────────────────────────────
 
-        private void BuildDonationsTab()
+        private Panel BuildDonationsPanel()
+        {
+            var panel = new Panel { BackColor = Theme.GL.App };
+            BuildDonationsContent(panel);
+            return panel;
+        }
+
+        private void BuildDonationsContent(Panel container)
         {
             // ── Entry panel (two rows via TableLayoutPanel) ──────────────────
             var entryPanel = new TableLayoutPanel
@@ -374,9 +846,10 @@ namespace Envelope_Steward
             ctxDonations.Items.Add("Delete Donation", null, DonationDelete_Click);
             dgvDonations.ContextMenuStrip = ctxDonations;
 
-            tabDonations.Controls.Add(dgvDonations);
-            tabDonations.Controls.Add(filterPanel);
-            tabDonations.Controls.Add(entryPanel);
+            container.Controls.Add(dgvDonations);
+            container.Controls.Add(filterPanel);
+            container.Controls.Add(entryPanel);
+            Theme.GL.ThemeDgv(dgvDonations);
         }
 
         private void RefreshDonationCombos()
@@ -489,9 +962,16 @@ namespace Envelope_Steward
             catch (Exception ex) { ShowError("Could not delete: " + ex.Message); }
         }
 
-        // ── Reports Tab ──────────────────────────────────────────────────────
+        // ── Reports Panel ────────────────────────────────────────────────────
 
-        private void BuildReportsTab()
+        private Panel BuildReportsPanel()
+        {
+            var panel = new Panel { BackColor = Theme.GL.App };
+            BuildReportsContent(panel);
+            return panel;
+        }
+
+        private void BuildReportsContent(Panel container)
         {
             var toolbar = new FlowLayoutPanel
             {
@@ -553,8 +1033,9 @@ namespace Envelope_Steward
 
             dgvReport = MakeGrid();
 
-            tabReports.Controls.Add(dgvReport);
-            tabReports.Controls.Add(toolbar);
+            container.Controls.Add(dgvReport);
+            container.Controls.Add(toolbar);
+            Theme.GL.ThemeDgv(dgvReport);
         }
 
         private void RefreshReportYears()
@@ -654,7 +1135,7 @@ namespace Envelope_Steward
             if (string.IsNullOrWhiteSpace(settings.ChurchName))
             {
                 ShowError("Please fill in Church Settings before generating receipts.");
-                tabMain.SelectedTab = tabSettings;
+                ShowView("settings");
                 return;
             }
 
@@ -695,9 +1176,16 @@ namespace Envelope_Steward
             catch (Exception ex) { ShowError("Receipt generation failed: " + ex.Message); }
         }
 
-        // ── Settings Tab ─────────────────────────────────────────────────────
+        // ── Settings Panel ───────────────────────────────────────────────────
 
-        private void BuildSettingsTab()
+        private Panel BuildSettingsPanel()
+        {
+            var panel = new Panel { BackColor = Theme.GL.App };
+            BuildSettingsContent(panel);
+            return panel;
+        }
+
+        private void BuildSettingsContent(Panel container)
         {
             var scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true };
             var tlp = new TableLayoutPanel
@@ -754,7 +1242,7 @@ namespace Envelope_Steward
             tlp.Controls.Add(btnSave);
 
             scroll.Controls.Add(tlp);
-            tabSettings.Controls.Add(scroll);
+            container.Controls.Add(scroll);
         }
 
         private void LoadSettings()
@@ -768,6 +1256,16 @@ namespace Envelope_Steward
             txtChurchRegNum.Text = s.RegNumber;
             txtAuthorizedSigner.Text = s.AuthorizedSigner;
             nudNextReceiptNum.Value = s.NextReceiptNumber;
+
+            // Update sidebar brand location line
+            if (lblBrandCity != null)
+            {
+                string city = s.City?.Trim() ?? "";
+                string prov = s.Province?.Trim() ?? "";
+                lblBrandCity.Text = (city.Length > 0 && prov.Length > 0)
+                    ? $"{city}, {prov}"
+                    : (city.Length > 0 ? city : prov);
+            }
 
             if (!string.IsNullOrEmpty(s.LogoPath) && File.Exists(s.LogoPath))
             {
@@ -842,7 +1340,7 @@ namespace Envelope_Steward
         private void SwitchToChurch(string name)
         {
             if (string.Equals(name, DataAccess.CurrentChurch, StringComparison.OrdinalIgnoreCase)) return;
-            try { DataAccess.SwitchChurch(name); RefreshAll(); UpdateTitle(); }
+            try { DataAccess.SwitchChurch(name); RefreshAll(); UpdateTitle(); UpdateBrand(); }
             catch (Exception ex) { ShowError("Could not switch congregation:\n" + ex.Message); }
         }
 
@@ -850,7 +1348,7 @@ namespace Envelope_Steward
         {
             using var dlg = new Forms.ChurchSelectorForm(DataAccess.GetAvailableChurches(), DataAccess.CurrentChurch, createMode: true);
             if (dlg.ShowDialog(this) != DialogResult.OK) return;
-            try { DataAccess.CreateChurch(dlg.SelectedChurch); RefreshAll(); UpdateTitle(); }
+            try { DataAccess.CreateChurch(dlg.SelectedChurch); RefreshAll(); UpdateTitle(); UpdateBrand(); }
             catch (Exception ex) { ShowError("Could not create congregation:\n" + ex.Message); }
         }
 
@@ -862,7 +1360,7 @@ namespace Envelope_Steward
             try
             {
                 bool deferred = DataAccess.RenameChurch(current, newName);
-                UpdateTitle();
+                UpdateTitle(); UpdateBrand();
                 if (deferred)
                     MessageBox.Show(
                         $"The congregation will be renamed to \"{DataAccess.CurrentChurch}\" " +
@@ -898,7 +1396,7 @@ namespace Envelope_Steward
                 DataAccess.SwitchChurch(next);
                 DataAccess.DeleteChurch(name);
                 RefreshAll();
-                UpdateTitle();
+                UpdateTitle(); UpdateBrand();
                 SetStatus($"Congregation \"{name}\" deleted.");
             }
             catch (Exception ex) { ShowError("Could not delete congregation:\n" + ex.Message); }
