@@ -50,8 +50,9 @@ namespace Envelope_Steward.Forms
                 Height = 44,
                 Padding = new Padding(8)
             };
-            var btnOk = new Button { Text = "Save", DialogResult = DialogResult.OK, Width = 80 };
-            var btnCancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Width = 80 };
+            // No DialogResult on the button — set it manually so validation can block the close.
+            var btnOk     = new Button { Text = "Save",   AutoSize = true, Margin = new Padding(2, 4, 2, 4) };
+            var btnCancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, AutoSize = true, Margin = new Padding(2, 4, 2, 4) };
             btnOk.Click += (_, _) =>
             {
                 if (string.IsNullOrWhiteSpace(txtName.Text) && string.IsNullOrWhiteSpace(txtDesc.Text))
@@ -62,6 +63,7 @@ namespace Envelope_Steward.Forms
                 Record.Name = txtName.Text.Trim();
                 Record.Description = txtDesc.Text.Trim();
                 Record.TaxReceiptable = chkTax.Checked;
+                DialogResult = DialogResult.OK;
             };
             btnPanel.Controls.AddRange(new Control[] { btnCancel, btnOk });
             AcceptButton = btnOk;

@@ -44,7 +44,8 @@ namespace Envelope_Steward.Forms
                 FlowDirection = FlowDirection.RightToLeft,
                 Padding = new Padding(8)
             };
-            var btnOk     = new Button { Text = "Create", DialogResult = DialogResult.OK,     AutoSize = true, Margin = new Padding(2, 4, 2, 4) };
+            // No DialogResult on the button — set it manually so validation can block the close.
+            var btnOk     = new Button { Text = "Create", AutoSize = true, Margin = new Padding(2, 4, 2, 4) };
             var btnCancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, AutoSize = true, Margin = new Padding(2, 4, 2, 4) };
             btnOk.Click += (_, _) =>
             {
@@ -55,6 +56,7 @@ namespace Envelope_Steward.Forms
                     return;
                 }
                 SelectedChurch = name;
+                DialogResult = DialogResult.OK;
             };
             btnPanel.Controls.AddRange(new Control[] { btnCancel, btnOk });
             AcceptButton = btnOk;
@@ -84,7 +86,8 @@ namespace Envelope_Steward.Forms
             };
 
             var btnCancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, AutoSize = true, Margin = new Padding(2, 4, 2, 4) };
-            var btnOpen   = new Button { Text = "Open",   DialogResult = DialogResult.OK,     AutoSize = true, Margin = new Padding(2, 4, 2, 4) };
+            // No DialogResult on the button — set it manually so validation can block the close.
+            var btnOpen   = new Button { Text = "Open",   AutoSize = true, Margin = new Padding(2, 4, 2, 4) };
             var btnRename = new Button { Text = "Rename…", AutoSize = true, Margin = new Padding(2, 4, 2, 4) };
 
             btnOpen.Click += (_, _) =>
@@ -92,9 +95,10 @@ namespace Envelope_Steward.Forms
                 if (listBox.SelectedItem is not string sel)
                 {
                     MessageBox.Show("Please select a congregation.", "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return;
+                    return;  // form stays open
                 }
                 SelectedChurch = sel;
+                DialogResult = DialogResult.OK;
             };
 
             btnRename.Click += (_, _) =>
@@ -151,21 +155,23 @@ namespace Envelope_Steward.Forms
             };
 
             var bp = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 44, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(8) };
-            var ok = new Button { Text = "Rename", DialogResult = DialogResult.OK, Width = 80 };
-            var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Width = 80 };
+            // No DialogResult on the button — set it manually so validation can block the close.
+            var ok     = new Button { Text = "Rename", AutoSize = true, Margin = new Padding(2, 4, 2, 4) };
+            var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, AutoSize = true, Margin = new Padding(2, 4, 2, 4) };
             ok.Click += (_, _) =>
             {
                 if (string.IsNullOrWhiteSpace(Sanitize(txt.Text)))
                 {
                     MessageBox.Show("Please enter a valid name.", "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return;
+                    return;  // form stays open
                 }
+                dlg.DialogResult = DialogResult.OK;
             };
             bp.Controls.AddRange(new Control[] { cancel, ok });
             dlg.AcceptButton = ok; dlg.CancelButton = cancel;
             // Add in reverse dock order: Bottom first, then Top controls stack downward
             dlg.Controls.AddRange(new Control[] { bp, txt, lbl });
-            Load += (_, _) => txt.SelectAll();
+            dlg.Load += (_, _) => txt.SelectAll();  // attach to dlg, not outer form
 
             return dlg.ShowDialog(this) == DialogResult.OK ? Sanitize(txt.Text) : null;
         }

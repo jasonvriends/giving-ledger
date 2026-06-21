@@ -11,6 +11,17 @@ namespace Envelope_Steward
         {
             DataAccess.LoadLastChurch();
             InitializeComponent();
+
+            // First run: no congregation DB exists yet — ask for a name before anything else.
+            if (!DataAccess.HasAnyChurch())
+            {
+                using var dlg = new Forms.ChurchSelectorForm([], "", createMode: true);
+                var name = dlg.ShowDialog() == DialogResult.OK && !string.IsNullOrWhiteSpace(dlg.SelectedChurch)
+                    ? dlg.SelectedChurch
+                    : "MyChurch";
+                DataAccess.CreateChurch(name);
+            }
+
             BuildUI();
             Load += (_, _) =>
             {
@@ -54,33 +65,43 @@ namespace Envelope_Steward
         {
             // Menu
             var menu = new MenuStrip();
-            var fileMenu = new ToolStripMenuItem("File");
-            var miImportMembers   = new ToolStripMenuItem("Import Members CSV...");
-            var miImportOfferings = new ToolStripMenuItem("Import Offering Types CSV...");
-            var miOpenDb    = new ToolStripMenuItem("Open Database Location");
-            var miBackup    = new ToolStripMenuItem("Backup Database to OneDrive…");
-            var miSwitch    = new ToolStripMenuItem("Switch Congregation…");
-            var miNewChurch = new ToolStripMenuItem("Add New Congregation…");
-            var miExit      = new ToolStripMenuItem("Exit");
+            // ── File ──────────────────────────────────────────────────────────
+            var fileMenu    = new ToolStripMenuItem("File");
+            var miImport    = new ToolStripMenuItem("Import");
+            var miImportMembers   = new ToolStripMenuItem("Members from CSV…");
+            var miImportOfferings = new ToolStripMenuItem("Offering Types from CSV…");
             miImportMembers.Click   += ImportMembers_Click;
             miImportOfferings.Click += ImportOfferings_Click;
-            miOpenDb.Click    += (_, _) => System.Diagnostics.Process.Start("explorer.exe",
-                $"/select,\"{DataAccess.DbPath}\"");
-            miBackup.Click    += BackupToOneDrive_Click;
-            miSwitch.Click    += SwitchChurch_Click;
-            miNewChurch.Click += AddChurch_Click;
-            miExit.Click      += (_, _) => Close();
+            miImport.DropDownItems.AddRange(new ToolStripItem[] { miImportMembers, miImportOfferings });
+
+            var miBackup = new ToolStripMenuItem("Backup to OneDrive…");
+            var miOpenDb = new ToolStripMenuItem("Open Database Folder");
+            var miExit   = new ToolStripMenuItem("Exit");
+            miBackup.Click += BackupToOneDrive_Click;
+            miOpenDb.Click += (_, _) => System.Diagnostics.Process.Start("explorer.exe",
+                $"\"{Path.GetDirectoryName(DataAccess.DbPath)}\"");
+            miExit.Click   += (_, _) => Close();
             fileMenu.DropDownItems.AddRange(new ToolStripItem[]
             {
-                miImportMembers, miImportOfferings,
+                miImport,
                 new ToolStripSeparator(),
-                miOpenDb, miBackup,
-                new ToolStripSeparator(),
-                miSwitch, miNewChurch,
+                miBackup, miOpenDb,
                 new ToolStripSeparator(),
                 miExit
             });
             menu.Items.Add(fileMenu);
+
+            // ── Congregation — rebuilt dynamically each time it opens ──────────
+            _congMenu = new ToolStripMenuItem("Congregation");
+            _congMenu.DropDownOpening += RebuildCongregationMenu;
+            menu.Items.Add(_congMenu);
+
+            // ── Help ──────────────────────────────────────────────────────────
+            var helpMenu = new ToolStripMenuItem("Help");
+            var miAbout  = new ToolStripMenuItem("About Giving Ledger…");
+            miAbout.Click += (_, _) => ShowAbout();
+            helpMenu.DropDownItems.Add(miAbout);
+            menu.Items.Add(helpMenu);
 
             // Status bar — left: operation message, right: live stats
             statusStrip1 = new StatusStrip();
@@ -713,8 +734,8 @@ namespace Envelope_Steward
             tlp.Controls.Add(new Label { Text = "Church Logo:", TextAlign = ContentAlignment.MiddleRight, Dock = DockStyle.Fill, Padding = new Padding(0, 6, 0, 0) });
             var logoPanel = new FlowLayoutPanel { AutoSize = true, Anchor = AnchorStyles.Left };
             picChurchLogo = new PictureBox { Width = 100, Height = 60, BorderStyle = BorderStyle.FixedSingle, SizeMode = PictureBoxSizeMode.Zoom };
-            var btnBrowseLogo = new Button { Text = "Browse...", Width = 80, Height = 26 };
-            var btnClearLogo = new Button { Text = "Clear", Width = 60, Height = 26 };
+            var btnBrowseLogo = new Button { Text = "Browse...", AutoSize = true, Margin = new Padding(2, 2, 4, 2) };
+            var btnClearLogo  = new Button { Text = "Clear",     AutoSize = true, Margin = new Padding(0, 2, 4, 2) };
             lblLogoPath = new Label { AutoSize = true, ForeColor = Color.Gray };
             btnBrowseLogo.Click += (_, _) =>
             {
@@ -728,7 +749,7 @@ namespace Envelope_Steward
             tlp.Controls.Add(logoPanel);
 
             tlp.Controls.Add(new Label());
-            var btnSave = new Button { Text = "Save Settings", Width = 130, Height = 30, Margin = new Padding(0, 8, 0, 0) };
+            var btnSave = new Button { Text = "Save Settings", AutoSize = true, Margin = new Padding(0, 8, 0, 0) };
             btnSave.Click += SaveSettings_Click;
             tlp.Controls.Add(btnSave);
 
@@ -773,33 +794,189 @@ namespace Envelope_Steward
             catch (Exception ex) { ShowError("Could not save settings: " + ex.Message); }
         }
 
-        // ── Multi-church ─────────────────────────────────────────────────────
+        // ── Congregation menu ────────────────────────────────────────────────
 
-        private void SwitchChurch_Click(object? s, EventArgs e)
+        private void RebuildCongregationMenu(object? sender, EventArgs e)
         {
-            var churches = DataAccess.GetAvailableChurches();
-            using var dlg = new Forms.ChurchSelectorForm(churches, DataAccess.CurrentChurch);
-            if (dlg.ShowDialog(this) != DialogResult.OK) return;
-            if (dlg.PendingRename.HasValue)
-                DataAccess.RenameChurch(dlg.PendingRename.Value.From, dlg.PendingRename.Value.To);
-            DataAccess.SwitchChurch(dlg.SelectedChurch);
-            RefreshAll();
-            UpdateTitle();
+            _congMenu.DropDownItems.Clear();
+
+            // Current congregation name — italic, disabled, acts as a visual header.
+            var current = DataAccess.CurrentChurch;
+            _congMenu.DropDownItems.Add(new ToolStripMenuItem(current)
+            {
+                Enabled = false,
+                Font = new Font(SystemFonts.MenuFont ?? SystemFonts.DefaultFont, FontStyle.Italic)
+            });
+            _congMenu.DropDownItems.Add(new ToolStripSeparator());
+
+            // All congregations — checkmark on the active one.
+            foreach (var name in DataAccess.GetAvailableChurches())
+            {
+                var capture = name;
+                var item = new ToolStripMenuItem(name)
+                {
+                    Checked      = string.Equals(name, current, StringComparison.OrdinalIgnoreCase),
+                    CheckOnClick = false
+                };
+                item.Click += (_, _) => SwitchToChurch(capture);
+                _congMenu.DropDownItems.Add(item);
+            }
+
+            _congMenu.DropDownItems.Add(new ToolStripSeparator());
+            var miAdd    = new ToolStripMenuItem("Add New Congregation…");
+            var miRename = new ToolStripMenuItem($"Rename \"{current}\"…");
+            miAdd.Click    += CongregationAdd_Click;
+            miRename.Click += CongregationRename_Click;
+            _congMenu.DropDownItems.AddRange(new ToolStripItem[] { miAdd, miRename });
+
+            // Delete is buried in a submenu to prevent accidental clicks.
+            _congMenu.DropDownItems.Add(new ToolStripSeparator());
+            var miManage = new ToolStripMenuItem("Manage…");
+            var miDelete = new ToolStripMenuItem($"Delete \"{current}\" permanently…");
+            miDelete.ForeColor = Color.DarkRed;
+            miDelete.Click += CongregationDelete_Click;
+            miManage.DropDownItems.Add(miDelete);
+            _congMenu.DropDownItems.Add(miManage);
         }
 
-        private void AddChurch_Click(object? s, EventArgs e)
+        private void SwitchToChurch(string name)
+        {
+            if (string.Equals(name, DataAccess.CurrentChurch, StringComparison.OrdinalIgnoreCase)) return;
+            try { DataAccess.SwitchChurch(name); RefreshAll(); UpdateTitle(); }
+            catch (Exception ex) { ShowError("Could not switch congregation:\n" + ex.Message); }
+        }
+
+        private void CongregationAdd_Click(object? s, EventArgs e)
         {
             using var dlg = new Forms.ChurchSelectorForm(DataAccess.GetAvailableChurches(), DataAccess.CurrentChurch, createMode: true);
             if (dlg.ShowDialog(this) != DialogResult.OK) return;
-            DataAccess.CreateChurch(dlg.SelectedChurch);
-            RefreshAll();
-            UpdateTitle();
+            try { DataAccess.CreateChurch(dlg.SelectedChurch); RefreshAll(); UpdateTitle(); }
+            catch (Exception ex) { ShowError("Could not create congregation:\n" + ex.Message); }
+        }
+
+        private void CongregationRename_Click(object? s, EventArgs e)
+        {
+            var current = DataAccess.CurrentChurch;
+            var newName = PromptInput($"Rename \"{current}\" to:", current);
+            if (newName == null || string.Equals(newName, current, StringComparison.OrdinalIgnoreCase)) return;
+            try
+            {
+                bool deferred = DataAccess.RenameChurch(current, newName);
+                UpdateTitle();
+                if (deferred)
+                    MessageBox.Show(
+                        $"The congregation will be renamed to \"{DataAccess.CurrentChurch}\" " +
+                        "the next time you open Giving Ledger.",
+                        "Rename Scheduled", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex) { ShowError("Could not rename congregation:\n" + ex.Message); }
+        }
+
+        private void CongregationDelete_Click(object? s, EventArgs e)
+        {
+            var name = DataAccess.CurrentChurch;
+            var all  = DataAccess.GetAvailableChurches();
+            if (all.Length <= 1)
+            {
+                ShowError("You cannot delete the only congregation.\nAdd another congregation first.");
+                return;
+            }
+
+            // First gate: plain warning.
+            if (MessageBox.Show(
+                    $"You are about to permanently delete \"{name}\" and ALL of its donation history, members, and settings.\n\nThis cannot be undone.\n\nContinue?",
+                    "Delete Congregation — Step 1 of 2",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
+                    MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
+
+            // Second gate: type-to-confirm dialog.
+            if (!ConfirmByTyping(name)) return;
+
+            try
+            {
+                var next = all.First(c => !string.Equals(c, name, StringComparison.OrdinalIgnoreCase));
+                DataAccess.SwitchChurch(next);
+                DataAccess.DeleteChurch(name);
+                RefreshAll();
+                UpdateTitle();
+                SetStatus($"Congregation \"{name}\" deleted.");
+            }
+            catch (Exception ex) { ShowError("Could not delete congregation:\n" + ex.Message); }
+        }
+
+        // Shows a dialog where the user must type `expected` exactly before OK enables.
+        private bool ConfirmByTyping(string expected)
+        {
+            using var dlg = new Form
+            {
+                Text = "Delete Congregation — Step 2 of 2",
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                StartPosition = FormStartPosition.CenterParent,
+                MaximizeBox = false, MinimizeBox = false,
+                Size = new Size(440, 180)
+            };
+            var lbl = new Label
+            {
+                Text = $"Type  \"{expected}\"  to confirm deletion:",
+                Dock = DockStyle.Top, Height = 32,
+                Padding = new Padding(12, 10, 0, 0)
+            };
+            var txt = new TextBox { Dock = DockStyle.Top, Margin = new Padding(12, 0, 12, 0) };
+            var bp  = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 44, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(8) };
+            var btnDelete = new Button { Text = "Delete Forever", AutoSize = true, Margin = new Padding(2, 4, 2, 4), Enabled = false, ForeColor = Color.DarkRed };
+            var btnCancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, AutoSize = true, Margin = new Padding(2, 4, 2, 4) };
+            txt.TextChanged += (_, _) =>
+                btnDelete.Enabled = string.Equals(txt.Text.Trim(), expected, StringComparison.Ordinal);
+            btnDelete.Click += (_, _) => { dlg.DialogResult = DialogResult.OK; };
+            bp.Controls.AddRange(new Control[] { btnCancel, btnDelete });
+            dlg.AcceptButton = btnDelete; dlg.CancelButton = btnCancel;
+            dlg.Controls.AddRange(new Control[] { bp, txt, lbl });
+            dlg.Load += (_, _) => txt.Focus();
+            return dlg.ShowDialog(this) == DialogResult.OK;
+        }
+
+        // Simple single-field input dialog.
+        private string? PromptInput(string prompt, string defaultValue = "")
+        {
+            using var dlg = new Form
+            {
+                Text = prompt, FormBorderStyle = FormBorderStyle.FixedDialog,
+                StartPosition = FormStartPosition.CenterParent,
+                MaximizeBox = false, MinimizeBox = false,
+                Size = new Size(420, 140)
+            };
+            var lbl = new Label { Text = prompt, Dock = DockStyle.Top, Height = 28, Padding = new Padding(10, 8, 0, 0) };
+            var txt = new TextBox { Text = defaultValue, Dock = DockStyle.Top, Margin = new Padding(10, 0, 10, 0) };
+            var bp  = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 44, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(8) };
+            var ok  = new Button { Text = "OK",     AutoSize = true, Margin = new Padding(2, 4, 2, 4) };
+            var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, AutoSize = true, Margin = new Padding(2, 4, 2, 4) };
+            ok.Click += (_, _) =>
+            {
+                var v = txt.Text.Trim();
+                if (string.IsNullOrWhiteSpace(v))
+                {
+                    MessageBox.Show("Please enter a value.", "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                dlg.Tag = v;
+                dlg.DialogResult = DialogResult.OK;
+            };
+            bp.Controls.AddRange(new Control[] { cancel, ok });
+            dlg.AcceptButton = ok; dlg.CancelButton = cancel;
+            dlg.Controls.AddRange(new Control[] { bp, txt, lbl });
+            dlg.Load += (_, _) => { txt.SelectAll(); txt.Focus(); };
+            return dlg.ShowDialog(this) == DialogResult.OK ? dlg.Tag as string : null;
         }
 
         // ── Mailing Labels ───────────────────────────────────────────────────
 
         private void PrintMailingLabels_Click(object? s, EventArgs e)
         {
+            // Ask which label format before we do anything else.
+            using var picker = new Forms.LabelSizePickerForm();
+            if (picker.ShowDialog(this) != DialogResult.OK) return;
+            var spec = picker.SelectedSpec!;
+
             // Respect current search filter — labels for currently visible members
             var members = DataAccess.GetAllMembers();
             if (!string.IsNullOrWhiteSpace(txtMemberSearch.Text))
@@ -823,7 +1000,7 @@ namespace Envelope_Steward
 
             try
             {
-                Services.MailingLabelService.GenerateLabels(members, save.FileName);
+                Services.MailingLabelService.GenerateLabels(members, spec, save.FileName);
                 SetStatus($"Mailing labels saved: {save.FileName}");
                 if (MessageBox.Show("Labels generated. Open PDF?", "Done", MessageBoxButtons.YesNo) == DialogResult.Yes)
                     System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(save.FileName) { UseShellExecute = true });
@@ -956,6 +1133,70 @@ namespace Envelope_Steward
 
         private void SetStatus(string msg) => toolStripStatusLabel1.Text = msg;
         private void ShowError(string msg) => MessageBox.Show(msg, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+
+        private void ShowAbout()
+        {
+            var version = System.Reflection.Assembly.GetExecutingAssembly()
+                              .GetName().Version?.ToString(3) ?? "1.0.0";
+            const string RepoUrl = "https://github.com/jasonvriends/giving-ledger";
+
+            using var dlg = new Form
+            {
+                Text = "About Giving Ledger",
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                StartPosition = FormStartPosition.CenterParent,
+                MaximizeBox = false, MinimizeBox = false,
+                Size = new Size(400, 200)
+            };
+
+            var lblName = new Label
+            {
+                Text = "Giving Ledger",
+                Font = new Font(Font.FontFamily, 14, FontStyle.Bold),
+                Dock = DockStyle.Top, Height = 36,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Padding = new Padding(0, 8, 0, 0)
+            };
+            var lblVer = new Label
+            {
+                Text = $"Version {version}",
+                Dock = DockStyle.Top, Height = 22,
+                TextAlign = ContentAlignment.MiddleCenter
+            };
+            var lblDesc = new Label
+            {
+                Text = "Church donation tracking for Windows",
+                Dock = DockStyle.Top, Height = 22,
+                TextAlign = ContentAlignment.MiddleCenter,
+                ForeColor = SystemColors.GrayText
+            };
+            var link = new LinkLabel
+            {
+                Text = RepoUrl,
+                Dock = DockStyle.Top, Height = 22,
+                TextAlign = ContentAlignment.MiddleCenter
+            };
+            link.LinkClicked += (_, _) =>
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(RepoUrl) { UseShellExecute = true });
+
+            var btnClose = new Button
+            {
+                Text = "Close", DialogResult = DialogResult.Cancel,
+                AutoSize = true, Anchor = AnchorStyles.None
+            };
+            var btnPanel = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Bottom, Height = 44,
+                FlowDirection = FlowDirection.RightToLeft,
+                Padding = new Padding(8)
+            };
+            btnPanel.Controls.Add(btnClose);
+            dlg.CancelButton = btnClose;
+
+            // Dock order: Bottom first, then Top controls stack top-to-bottom
+            dlg.Controls.AddRange(new Control[] { btnPanel, link, lblDesc, lblVer, lblName });
+            dlg.ShowDialog(this);
+        }
     }
 
     // ── Progress Dialog ──────────────────────────────────────────────────────

@@ -76,8 +76,8 @@ namespace Envelope_Steward.Forms
                 Height = 44,
                 Padding = new Padding(8)
             };
-            var btnOk     = new Button { Text = "Save",   DialogResult = DialogResult.OK,     Width = 80 };
-            var btnCancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Width = 80 };
+            var btnOk     = new Button { Text = "Save",   AutoSize = true, Margin = new Padding(2, 4, 2, 4) };
+            var btnCancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, AutoSize = true, Margin = new Padding(2, 4, 2, 4) };
             btnOk.Click += (_, _) =>
             {
                 Member.EnvelopeNumber = txtEnvelope.Text.Trim();
@@ -92,6 +92,7 @@ namespace Envelope_Steward.Forms
                 Member.FullMember     = chkFullMember.Checked;
                 Member.ShutIn         = chkShutIn.Checked;
                 Member.Active         = chkActive.Checked;
+                DialogResult = DialogResult.OK;
             };
             btnPanel.Controls.AddRange(new Control[] { btnCancel, btnOk });
             AcceptButton = btnOk;

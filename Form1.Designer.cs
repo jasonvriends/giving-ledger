@@ -39,6 +39,9 @@ namespace Envelope_Steward
         private PictureBox picChurchLogo;
         private Label lblLogoPath;
 
+        // Congregation menu (rebuilt dynamically)
+        private ToolStripMenuItem _congMenu = null!;
+
         // Status
         private StatusStrip statusStrip1;
         private ToolStripStatusLabel toolStripStatusLabel1;

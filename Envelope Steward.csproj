@@ -7,6 +7,9 @@
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyTitle>Giving Ledger</AssemblyTitle>
+    <Product>Giving Ledger</Product>
+    <AssemblyName>GivingLedger</AssemblyName>
   </PropertyGroup>
 
   <ItemGroup>

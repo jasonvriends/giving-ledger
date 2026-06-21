@@ -772,20 +772,75 @@ CREATE TABLE IF NOT EXISTS Receipts (
             return num;
         }
 
+        public static bool HasAnyChurch()
+        {
+            if (!Directory.Exists(DataFolder)) return false;
+            return Directory.GetFiles(DataFolder, "*.db").Length > 0;
+        }
+
         public static string[] GetAvailableChurches()
         {
-            if (!Directory.Exists(DataFolder)) return ["Default"];
+            if (!Directory.Exists(DataFolder)) return [];
+            var pending = ReadPendingRename();
             var files = Directory.GetFiles(DataFolder, "*.db")
                 .Select(f => Path.GetFileNameWithoutExtension(f)!)
+                .Select(n => pending.HasValue && n == pending.Value.From ? pending.Value.To : n)
                 .OrderBy(n => n)
                 .ToArray();
-            return files.Length > 0 ? files : ["Default"];
+            return files;
+        }
+
+        private static (string From, string To)? ReadPendingRename()
+        {
+            var f = Path.Combine(DataFolder, "pending_rename.txt");
+            if (!File.Exists(f)) return null;
+            var parts = File.ReadAllText(f).Trim().Split('|');
+            return parts.Length == 2 ? (parts[0], parts[1]) : null;
         }
 
         public static void LoadLastChurch()
         {
-            // Called at startup before EnsureDatabase so no DB operations here.
-            var lastFile = Path.Combine(DataFolder, "lastused.txt");
+            // Called at startup before any DB operations — pure file I/O only.
+            var folder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data");
+
+            // Apply any rename that was deferred from the previous session.
+            var pendingFile = Path.Combine(folder, "pending_rename.txt");
+            if (File.Exists(pendingFile))
+            {
+                string[]? parts = null;
+                bool renameSucceeded = false;
+                try
+                {
+                    parts = File.ReadAllText(pendingFile).Trim().Split('|');
+                    if (parts.Length == 2)
+                    {
+                        var oldPath = Path.Combine(folder, $"{parts[0]}.db");
+                        var newPath = Path.Combine(folder, $"{parts[1]}.db");
+                        if (File.Exists(oldPath) && !File.Exists(newPath))
+                        {
+                            File.Move(oldPath, newPath);
+                            foreach (var ext in new[] { "-shm", "-wal" })
+                            {
+                                var s = oldPath + ext;
+                                if (File.Exists(s)) File.Move(s, newPath + ext, overwrite: true);
+                            }
+                        }
+                        // If newPath already exists (rename was already done on a prior startup) that's fine too.
+                        renameSucceeded = File.Exists(newPath);
+                    }
+                }
+                catch
+                {
+                    // Rename failed — revert lastused.txt to the old name so we don't open a blank DB.
+                    if (parts?.Length == 2)
+                    {
+                        try { File.WriteAllText(Path.Combine(folder, "lastused.txt"), parts[0]); } catch { }
+                    }
+                }
+                finally { try { File.Delete(pendingFile); } catch { } }
+            }
+
+            var lastFile = Path.Combine(folder, "lastused.txt");
             if (!File.Exists(lastFile)) return;
             var name = File.ReadAllText(lastFile).Trim();
             if (!string.IsNullOrEmpty(name))
@@ -808,19 +863,72 @@ CREATE TABLE IF NOT EXISTS Receipts (
         // Creates a new church DB (SwitchChurch already creates if missing).
         public static void CreateChurch(string name) => SwitchChurch(name);
 
-        public static void RenameChurch(string oldName, string newName)
+        public static void DeleteChurch(string name)
         {
-            if (oldName == newName) return;
+            var path = Path.Combine(DataFolder, $"{name}.db");
+            if (!File.Exists(path))
+                throw new FileNotFoundException($"Database for \"{name}\" not found.");
+
             SqliteConnection.ClearAllPools();
+            File.Delete(path);
+            foreach (var ext in new[] { "-shm", "-wal" })
+            {
+                var s = path + ext;
+                if (File.Exists(s)) try { File.Delete(s); } catch { }
+            }
+
+            // Also clear any pending rename that references this church.
+            var pendingFile = Path.Combine(DataFolder, "pending_rename.txt");
+            if (File.Exists(pendingFile))
+            {
+                var parts = File.ReadAllText(pendingFile).Trim().Split('|');
+                if (parts.Length == 2 && (parts[0] == name || parts[1] == name))
+                    try { File.Delete(pendingFile); } catch { }
+            }
+
+            if (_currentDbFile == $"{name}.db")
+            {
+                _currentDbFile = "envelopes.db";
+                CurrentChurch  = "Default";
+            }
+        }
+
+        /// <summary>
+        /// Returns true if the rename was deferred to next startup (active DB), false if applied immediately.
+        /// </summary>
+        public static bool RenameChurch(string oldName, string newName)
+        {
+            if (oldName == newName) return false;
+
             var oldPath = Path.Combine(DataFolder, $"{oldName}.db");
             var newPath = Path.Combine(DataFolder, $"{newName}.db");
-            if (!File.Exists(oldPath)) return;
-            File.Move(oldPath, newPath, overwrite: false);
+
+            if (!File.Exists(oldPath))
+                throw new FileNotFoundException($"Database for \"{oldName}\" not found.");
+            if (File.Exists(newPath) && !string.Equals(oldName, newName, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException($"A congregation named \"{newName}\" already exists.");
+
             if (_currentDbFile == $"{oldName}.db")
             {
-                _currentDbFile = $"{newName}.db";
-                CurrentChurch = newName;
+                // Active DB is open — defer the file rename to the next app startup
+                // so we never move a file that has open handles.
+                // Do NOT call SwitchChurch after this; _currentDbFile must keep pointing
+                // to the existing file or EnsureDatabase will create an empty new DB.
+                File.WriteAllText(Path.Combine(DataFolder, "pending_rename.txt"), $"{oldName}|{newName}");
                 File.WriteAllText(Path.Combine(DataFolder, "lastused.txt"), newName);
+                CurrentChurch = newName;
+                return true; // deferred
+            }
+            else
+            {
+                // Not the active DB — rename immediately.
+                File.Move(oldPath, newPath, overwrite: false);
+                foreach (var ext in new[] { "-shm", "-wal" })
+                {
+                    var s = oldPath + ext;
+                    if (File.Exists(s)) File.Move(s, newPath + ext, overwrite: true);
+                }
+                return false; // applied immediately
             }
         }
 
