@@ -44,8 +44,8 @@ namespace Envelope_Steward.Forms
                 FlowDirection = FlowDirection.RightToLeft,
                 Padding = new Padding(8)
             };
-            var btnOk     = new Button { Text = "Create", DialogResult = DialogResult.OK,     Width = 80 };
-            var btnCancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Width = 80 };
+            var btnOk     = new Button { Text = "Create", DialogResult = DialogResult.OK,     AutoSize = true, Margin = new Padding(2, 4, 2, 4) };
+            var btnCancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, AutoSize = true, Margin = new Padding(2, 4, 2, 4) };
             btnOk.Click += (_, _) =>
             {
                 var name = Sanitize(txtName.Text);
@@ -83,8 +83,8 @@ namespace Envelope_Steward.Forms
                 Padding = new Padding(8)
             };
 
-            var btnCancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Width = 80 };
-            var btnOpen   = new Button { Text = "Open",   DialogResult = DialogResult.OK,     Width = 80 };
+            var btnCancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, AutoSize = true, Margin = new Padding(2, 4, 2, 4) };
+            var btnOpen   = new Button { Text = "Open",   DialogResult = DialogResult.OK,     AutoSize = true, Margin = new Padding(2, 4, 2, 4) };
             var btnRename = new Button { Text = "Rename…", AutoSize = true, Margin = new Padding(2, 4, 2, 4) };
 
             btnOpen.Click += (_, _) =>
