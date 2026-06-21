@@ -1,6 +1,7 @@
 using Envelope_Steward.Forms;
 using Envelope_Steward.Models;
 using Envelope_Steward.Services;
+using Microsoft.Data.Sqlite;
 
 namespace Envelope_Steward
 {
@@ -33,18 +34,20 @@ namespace Envelope_Steward
             var miImportMembers  = new ToolStripMenuItem("Import Members CSV...");
             var miImportOfferings = new ToolStripMenuItem("Import Offering Types CSV...");
             var miShowDb  = new ToolStripMenuItem("Show Database Location");
+            var miBackup  = new ToolStripMenuItem("Backup Database to OneDrive…");
             var miResetDb = new ToolStripMenuItem("Reset Database (delete && recreate)…");
             var miExit    = new ToolStripMenuItem("Exit");
             miImportMembers.Click  += ImportMembers_Click;
             miImportOfferings.Click += ImportOfferings_Click;
             miShowDb.Click  += (_, _) => MessageBox.Show(DataAccess.DbPath, "Database Location", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            miBackup.Click  += BackupToOneDrive_Click;
             miResetDb.Click += ResetDatabase_Click;
             miExit.Click    += (_, _) => Close();
             fileMenu.DropDownItems.AddRange(new ToolStripItem[]
             {
                 miImportMembers, miImportOfferings,
                 new ToolStripSeparator(),
-                miShowDb, miResetDb,
+                miShowDb, miBackup, miResetDb,
                 new ToolStripSeparator(),
                 miExit
             });
@@ -668,6 +671,57 @@ namespace Envelope_Steward
                 SetStatus("Database reset. Ready for fresh import.");
             }
             catch (Exception ex) { ShowError("Reset failed: " + ex.Message); }
+        }
+
+        // ── Backup ───────────────────────────────────────────────────────────
+
+        private void BackupToOneDrive_Click(object? s, EventArgs e)
+        {
+            // Locate OneDrive root — try the env var first, then common folder names.
+            string? oneDrive = Environment.GetEnvironmentVariable("OneDrive")
+                ?? Environment.GetEnvironmentVariable("OneDriveConsumer")
+                ?? Environment.GetEnvironmentVariable("OneDriveCommercial");
+
+            if (string.IsNullOrEmpty(oneDrive) || !Directory.Exists(oneDrive))
+            {
+                // Fall back: look for a OneDrive folder inside the user profile.
+                string profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                foreach (var candidate in new[] { "OneDrive", "OneDrive - Personal", "OneDrive - Business" })
+                {
+                    string path = Path.Combine(profile, candidate);
+                    if (Directory.Exists(path)) { oneDrive = path; break; }
+                }
+            }
+
+            if (string.IsNullOrEmpty(oneDrive) || !Directory.Exists(oneDrive))
+            {
+                ShowError("OneDrive folder not found on this machine.\n" +
+                          "Make sure OneDrive is installed and signed in.");
+                return;
+            }
+
+            string backupDir = Path.Combine(oneDrive, "EnvelopeSteward", "Backups");
+            Directory.CreateDirectory(backupDir);
+
+            string stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            string dest  = Path.Combine(backupDir, $"envelopes_backup_{stamp}.db");
+
+            try
+            {
+                // Flush WAL and close all pooled connections before copying.
+                SqliteConnection.ClearAllPools();
+                File.Copy(DataAccess.DbPath, dest, overwrite: false);
+
+                var result = MessageBox.Show(
+                    $"Backup saved to:\n{dest}\n\nOpen backup folder?",
+                    "Backup Complete", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
+
+                if (result == DialogResult.Yes)
+                    System.Diagnostics.Process.Start("explorer.exe", backupDir);
+
+                SetStatus($"Backup saved: envelopes_backup_{stamp}.db");
+            }
+            catch (Exception ex) { ShowError("Backup failed: " + ex.Message); }
         }
 
         // ── CSV Imports ──────────────────────────────────────────────────────
