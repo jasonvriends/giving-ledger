@@ -808,6 +808,22 @@ CREATE TABLE IF NOT EXISTS Receipts (
         // Creates a new church DB (SwitchChurch already creates if missing).
         public static void CreateChurch(string name) => SwitchChurch(name);
 
+        public static void RenameChurch(string oldName, string newName)
+        {
+            if (oldName == newName) return;
+            SqliteConnection.ClearAllPools();
+            var oldPath = Path.Combine(DataFolder, $"{oldName}.db");
+            var newPath = Path.Combine(DataFolder, $"{newName}.db");
+            if (!File.Exists(oldPath)) return;
+            File.Move(oldPath, newPath, overwrite: false);
+            if (_currentDbFile == $"{oldName}.db")
+            {
+                _currentDbFile = $"{newName}.db";
+                CurrentChurch = newName;
+                File.WriteAllText(Path.Combine(DataFolder, "lastused.txt"), newName);
+            }
+        }
+
         public static void RecordReceipt(int receiptNum, int memberId, int taxYear, decimal total, string pdfPath)
         {
             EnsureDatabase();

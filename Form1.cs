@@ -509,8 +509,9 @@ namespace Envelope_Steward
             chkActiveOnly = new CheckBox { Text = "Active members only", AutoSize = true, Checked = true, Margin = new Padding(8, 7, 4, 0), Visible = false };
             toolbar.Controls.Add(chkActiveOnly);
 
-            var btnRun      = RB("Run Report");
-            var btnExport   = RB("Export CSV");
+            var btnRun        = RB("Run Report");
+            var btnExport     = RB("Export CSV");
+            var btnExportPdf  = RB("Export PDF");
             toolbar.Controls.Add(new Label { Text = "|", AutoSize = true, Margin = new Padding(6, 7, 6, 0), ForeColor = Color.Silver });
             var btnReceipts = RB("Generate Tax Receipts (PDF)");
 
@@ -524,9 +525,10 @@ namespace Envelope_Steward
                 chkActiveOnly.Visible  = isTaxSummary;
             };
 
-            btnRun.Click      += ReportRun_Click;
-            btnExport.Click   += ReportExport_Click;
-            btnReceipts.Click += GenerateReceipts_Click;
+            btnRun.Click       += ReportRun_Click;
+            btnExport.Click    += ReportExport_Click;
+            btnExportPdf.Click += ReportExportPdf_Click;
+            btnReceipts.Click  += GenerateReceipts_Click;
 
             dgvReport = MakeGrid();
 
@@ -591,6 +593,34 @@ namespace Envelope_Steward
                     sb.AppendLine(string.Join(",", dt.Columns.Cast<System.Data.DataColumn>().Where(c => c.ColumnName != "MemberId").Select(c => $"\"{row[c]}\"")));
                 File.WriteAllText(dlg.FileName, sb.ToString());
                 SetStatus($"Exported to {dlg.FileName}");
+            }
+            catch (Exception ex) { ShowError("Export failed: " + ex.Message); }
+        }
+
+        private void ReportExportPdf_Click(object? s, EventArgs e)
+        {
+            if (dgvReport.Rows.Count == 0) { ShowError("Run a report first."); return; }
+            var dt = (System.Data.DataTable?)dgvReport.DataSource;
+            if (dt == null) return;
+
+            string label = cmbReportType.Text.StartsWith("Year-over-Year")
+                ? $"{cmbCompareYear.Text}_vs_{cmbReportYear.Text}"
+                : $"{cmbReportYear.Text}_{cmbReportPeriod.Text}";
+
+            using var dlg = new SaveFileDialog
+            {
+                Filter = "PDF files (*.pdf)|*.pdf",
+                FileName = $"Report_{label}_{cmbReportType.Text.Replace(" ", "_")}.pdf"
+            };
+            if (dlg.ShowDialog(this) != DialogResult.OK) return;
+            try
+            {
+                var title = $"{cmbReportType.Text}  —  {label.Replace('_', ' ')}";
+                var church = DataAccess.GetChurchSettings();
+                Services.ReportPdfService.GenerateReport(dt, title, church.ChurchName, dlg.FileName);
+                SetStatus($"Report saved: {dlg.FileName}");
+                if (MessageBox.Show("Report saved. Open PDF?", "Done", MessageBoxButtons.YesNo) == DialogResult.Yes)
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(dlg.FileName) { UseShellExecute = true });
             }
             catch (Exception ex) { ShowError("Export failed: " + ex.Message); }
         }
@@ -750,6 +780,8 @@ namespace Envelope_Steward
             var churches = DataAccess.GetAvailableChurches();
             using var dlg = new Forms.ChurchSelectorForm(churches, DataAccess.CurrentChurch);
             if (dlg.ShowDialog(this) != DialogResult.OK) return;
+            if (dlg.PendingRename.HasValue)
+                DataAccess.RenameChurch(dlg.PendingRename.Value.From, dlg.PendingRename.Value.To);
             DataAccess.SwitchChurch(dlg.SelectedChurch);
             RefreshAll();
             UpdateTitle();
