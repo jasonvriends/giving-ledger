@@ -10,12 +10,6 @@ namespace Envelope_Steward
         public  static string DbPath     => Path.Combine(DataFolder, "envelopes.db");
         private static string ConnectionString => $"Data Source={DbPath}";
 
-        public static void DeleteDatabase()
-        {
-            SqliteConnection.ClearAllPools();
-            if (File.Exists(DbPath)) File.Delete(DbPath);
-        }
-
         // ── Schema ──────────────────────────────────────────────────────────
 
         public static void EnsureDatabase()

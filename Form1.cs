@@ -33,21 +33,20 @@ namespace Envelope_Steward
             var fileMenu = new ToolStripMenuItem("File");
             var miImportMembers  = new ToolStripMenuItem("Import Members CSV...");
             var miImportOfferings = new ToolStripMenuItem("Import Offering Types CSV...");
-            var miShowDb  = new ToolStripMenuItem("Show Database Location");
+            var miOpenDb  = new ToolStripMenuItem("Open Database Location");
             var miBackup  = new ToolStripMenuItem("Backup Database to OneDrive…");
-            var miResetDb = new ToolStripMenuItem("Reset Database (delete && recreate)…");
             var miExit    = new ToolStripMenuItem("Exit");
             miImportMembers.Click  += ImportMembers_Click;
             miImportOfferings.Click += ImportOfferings_Click;
-            miShowDb.Click  += (_, _) => MessageBox.Show(DataAccess.DbPath, "Database Location", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            miOpenDb.Click  += (_, _) => System.Diagnostics.Process.Start("explorer.exe",
+                $"/select,\"{DataAccess.DbPath}\"");
             miBackup.Click  += BackupToOneDrive_Click;
-            miResetDb.Click += ResetDatabase_Click;
             miExit.Click    += (_, _) => Close();
             fileMenu.DropDownItems.AddRange(new ToolStripItem[]
             {
                 miImportMembers, miImportOfferings,
                 new ToolStripSeparator(),
-                miShowDb, miBackup, miResetDb,
+                miOpenDb, miBackup,
                 new ToolStripSeparator(),
                 miExit
             });
@@ -644,33 +643,6 @@ namespace Envelope_Steward
             };
             try { DataAccess.SaveChurchSettings(settings); SetStatus("Settings saved."); }
             catch (Exception ex) { ShowError("Could not save settings: " + ex.Message); }
-        }
-
-        // ── Database Reset ───────────────────────────────────────────────────
-
-        private void ResetDatabase_Click(object? s, EventArgs e)
-        {
-            var confirm = MessageBox.Show(
-                "This will permanently delete all data in the database and recreate it empty.\n\nAre you sure?",
-                "Reset Database", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-            if (confirm != DialogResult.Yes) return;
-
-            try
-            {
-                DataAccess.DeleteDatabase();
-                DataAccess.EnsureDatabase();
-                dgvMembers.DataSource = null;
-                dgvOfferingTypes.DataSource = null;
-                dgvDonations.DataSource = null;
-                dgvReport.DataSource = null;
-                cmbDonationMember.Items.Clear();
-                cmbDonationMemberFilter.Items.Clear();
-                cmbDonationOfferingType.Items.Clear();
-                cmbDonationYear.Items.Clear();
-                cmbReportYear.Items.Clear();
-                SetStatus("Database reset. Ready for fresh import.");
-            }
-            catch (Exception ex) { ShowError("Reset failed: " + ex.Message); }
         }
 
         // ── Backup ───────────────────────────────────────────────────────────
