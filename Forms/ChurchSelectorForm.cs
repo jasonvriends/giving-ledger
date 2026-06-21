@@ -24,22 +24,19 @@ namespace Envelope_Steward.Forms
         private void BuildCreateMode()
         {
             Text = "Add New Congregation";
-            AutoSize = true;
-            AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            MinimumSize = new Size(400, 0);
+            Size = new Size(420, 160);
 
-            var tlp = new TableLayoutPanel
+            var lbl = new Label
             {
-                ColumnCount = 1,
-                Padding = new Padding(16),
-                AutoSize = true,
-                AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                MinimumSize = new Size(368, 0)
+                Text = "Enter a short name for the new congregation:",
+                Dock = DockStyle.Top, Height = 28,
+                Padding = new Padding(12, 8, 0, 0)
             };
-            tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            tlp.Controls.Add(new Label { Text = "Enter a short name for the new congregation:", AutoSize = true, Margin = new Padding(0, 0, 0, 6) });
-            var txtName = new TextBox { Dock = DockStyle.Fill };
-            tlp.Controls.Add(txtName);
+            var txtName = new TextBox
+            {
+                Dock = DockStyle.Top,
+                Margin = new Padding(12, 0, 12, 0)
+            };
 
             var btnPanel = new FlowLayoutPanel
             {
@@ -63,8 +60,8 @@ namespace Envelope_Steward.Forms
             AcceptButton = btnOk;
             CancelButton = btnCancel;
 
-            Controls.Add(btnPanel);
-            Controls.Add(tlp);
+            // Dock order: Bottom first, then Top controls stack downward
+            Controls.AddRange(new Control[] { btnPanel, txtName, lbl });
         }
 
         // ── Switch mode ──────────────────────────────────────────────────────
@@ -138,21 +135,20 @@ namespace Envelope_Steward.Forms
                 FormBorderStyle = FormBorderStyle.FixedDialog,
                 StartPosition = FormStartPosition.CenterParent,
                 MaximizeBox = false, MinimizeBox = false,
-                AutoSize = true,
-                AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                MinimumSize = new Size(380, 0)
+                Size = new Size(400, 160)
             };
-            var tlp = new TableLayoutPanel
+            var lbl = new Label
             {
-                ColumnCount = 1, Padding = new Padding(16),
-                AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                MinimumSize = new Size(348, 0)
+                Text = $"New name for \"{current}\":",
+                Dock = DockStyle.Top, Height = 28,
+                Padding = new Padding(12, 8, 0, 0)
             };
-            tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            tlp.Controls.Add(new Label { Text = $"New name for \"{current}\":", AutoSize = true, Margin = new Padding(0, 0, 0, 6) });
-            var txt = new TextBox { Text = current, Dock = DockStyle.Fill };
-            txt.SelectAll();
-            tlp.Controls.Add(txt);
+            var txt = new TextBox
+            {
+                Text = current,
+                Dock = DockStyle.Top,
+                Margin = new Padding(12, 0, 12, 0)
+            };
 
             var bp = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 44, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(8) };
             var ok = new Button { Text = "Rename", DialogResult = DialogResult.OK, Width = 80 };
@@ -167,8 +163,9 @@ namespace Envelope_Steward.Forms
             };
             bp.Controls.AddRange(new Control[] { cancel, ok });
             dlg.AcceptButton = ok; dlg.CancelButton = cancel;
-            dlg.Controls.Add(bp);
-            dlg.Controls.Add(tlp);
+            // Add in reverse dock order: Bottom first, then Top controls stack downward
+            dlg.Controls.AddRange(new Control[] { bp, txt, lbl });
+            Load += (_, _) => txt.SelectAll();
 
             return dlg.ShowDialog(this) == DialogResult.OK ? Sanitize(txt.Text) : null;
         }
