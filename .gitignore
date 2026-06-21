@@ -7,8 +7,11 @@ obj/
 *.db-shm
 *.db-wal
 
-# Confidential seed / import data
-SeedData/
+# Real church import data (confidential — keep out of source control)
+# Place your actual CSV exports in SeedData/ and they will be ignored.
+# Only the sample_*.csv templates are tracked.
+SeedData/*.csv
+!SeedData/sample_*.csv
 
 # User-specific VS files
 *.user

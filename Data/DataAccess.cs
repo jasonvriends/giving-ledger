@@ -195,29 +195,33 @@ CREATE TABLE IF NOT EXISTS Receipts (
         {
             EnsureDatabase();
             var dt = new DataTable();
-            dt.Columns.Add("Id",         typeof(long));
-            dt.Columns.Add("Envelope #", typeof(string));
-            dt.Columns.Add("First Name", typeof(string));
-            dt.Columns.Add("Last Name",  typeof(string));
-            dt.Columns.Add("City",       typeof(string));
-            dt.Columns.Add("Province",   typeof(string));
-            dt.Columns.Add("Phone",      typeof(string));
-            dt.Columns.Add("Email",      typeof(string));
-            dt.Columns.Add("Active",     typeof(string));
-
             using var conn = new SqliteConnection(ConnectionString);
             conn.Open();
             using var cmd = conn.CreateCommand();
             if (string.IsNullOrWhiteSpace(search))
             {
-                cmd.CommandText = @"SELECT Id, EnvelopeNumber, FirstName, LastName,
-                    City, Province, HomePhone, Email, Active
+                cmd.CommandText = @"SELECT Id,
+                    CAST(EnvelopeNumber AS TEXT) as 'Envelope #',
+                    CAST(FirstName AS TEXT) as 'First Name',
+                    CAST(LastName AS TEXT) as 'Last Name',
+                    CAST(City AS TEXT) as 'City',
+                    CAST(Province AS TEXT) as 'Province',
+                    CAST(HomePhone AS TEXT) as 'Phone',
+                    CAST(Email AS TEXT) as 'Email',
+                    CAST(Active AS TEXT) as 'Active'
                     FROM Members ORDER BY EnvelopeNumber";
             }
             else
             {
-                cmd.CommandText = @"SELECT Id, EnvelopeNumber, FirstName, LastName,
-                    City, Province, HomePhone, Email, Active
+                cmd.CommandText = @"SELECT Id,
+                    CAST(EnvelopeNumber AS TEXT) as 'Envelope #',
+                    CAST(FirstName AS TEXT) as 'First Name',
+                    CAST(LastName AS TEXT) as 'Last Name',
+                    CAST(City AS TEXT) as 'City',
+                    CAST(Province AS TEXT) as 'Province',
+                    CAST(HomePhone AS TEXT) as 'Phone',
+                    CAST(Email AS TEXT) as 'Email',
+                    CAST(Active AS TEXT) as 'Active'
                     FROM Members
                     WHERE EnvelopeNumber LIKE $s
                        OR FirstName LIKE $s
@@ -228,7 +232,7 @@ CREATE TABLE IF NOT EXISTS Receipts (
             }
             using var r = cmd.ExecuteReader();
             dt.Load(r);
-            return dt;
+            return SanitizeForGrid(dt);
         }
 
         private static MemberRecord ReadMember(SqliteDataReader r) => new()
@@ -351,22 +355,17 @@ CREATE TABLE IF NOT EXISTS Receipts (
         {
             EnsureDatabase();
             var dt = new DataTable();
-            dt.Columns.Add("Id",                typeof(long));
-            dt.Columns.Add("Name / Description", typeof(string));
-            dt.Columns.Add("Code",               typeof(string));
-            dt.Columns.Add("Tax Receiptable",    typeof(string));
-
             using var conn = new SqliteConnection(ConnectionString);
             conn.Open();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = @"SELECT Id,
-                CASE WHEN Description IS NOT NULL AND Description != '' THEN Description ELSE Name END,
-                Name,
-                CASE WHEN TaxReceiptable = 1 THEN 'Yes' ELSE 'No' END
+                CASE WHEN Description IS NOT NULL AND CAST(Description AS TEXT) != '' THEN CAST(Description AS TEXT) ELSE CAST(Name AS TEXT) END as 'Name / Description',
+                CAST(Name AS TEXT) as 'Code',
+                CASE WHEN TaxReceiptable = 1 THEN 'Yes' ELSE 'No' END as 'Tax Receiptable'
                 FROM OfferingTypes ORDER BY Description, Name";
             using var r = cmd.ExecuteReader();
             dt.Load(r);
-            return dt;
+            return SanitizeForGrid(dt);
         }
 
         // ── Donations ────────────────────────────────────────────────────────
@@ -431,17 +430,6 @@ CREATE TABLE IF NOT EXISTS Receipts (
         {
             EnsureDatabase();
             var dt = new DataTable();
-            // Pre-declare schema so column types are explicit regardless of row count.
-            // Microsoft.Data.Sqlite infers CLR types from stored values; with 0 rows
-            // computed columns get typeof(object), which DataGridView can mishandle.
-            dt.Columns.Add("Id",            typeof(long));
-            dt.Columns.Add("Date",          typeof(string));
-            dt.Columns.Add("Env #",         typeof(string));
-            dt.Columns.Add("Member",        typeof(string));
-            dt.Columns.Add("Offering Type", typeof(string));
-            dt.Columns.Add("Amount",        typeof(double));
-            dt.Columns.Add("Notes",         typeof(string));
-
             using var conn = new SqliteConnection(ConnectionString);
             conn.Open();
             using var cmd = conn.CreateCommand();
@@ -454,12 +442,12 @@ CREATE TABLE IF NOT EXISTS Receipts (
             var whereClause = where.Count > 0 ? "WHERE " + string.Join(" AND ", where) : "";
 
             cmd.CommandText = $@"SELECT d.Id,
-                d.Date,
-                m.EnvelopeNumber,
-                m.FirstName||' '||m.LastName,
-                CASE WHEN ot.Description IS NOT NULL AND ot.Description != '' THEN ot.Description ELSE ot.Name END,
-                CAST(d.Amount AS REAL),
-                d.Notes
+                CAST(d.Date AS TEXT) as 'Date',
+                CAST(m.EnvelopeNumber AS TEXT) as 'Env #',
+                CAST(m.FirstName AS TEXT)||' '||CAST(m.LastName AS TEXT) as 'Member',
+                CASE WHEN ot.Description IS NOT NULL AND CAST(ot.Description AS TEXT) != '' THEN CAST(ot.Description AS TEXT) ELSE CAST(ot.Name AS TEXT) END as 'Offering Type',
+                CAST(d.Amount AS REAL) as 'Amount',
+                CAST(d.Notes AS TEXT) as 'Notes'
                 FROM Donations d
                 LEFT JOIN Members m ON d.MemberId=m.Id
                 LEFT JOIN OfferingTypes ot ON d.OfferingTypeId=ot.Id
@@ -467,7 +455,7 @@ CREATE TABLE IF NOT EXISTS Receipts (
                 ORDER BY d.Date DESC, m.EnvelopeNumber";
             using var r = cmd.ExecuteReader();
             dt.Load(r);
-            return dt;
+            return SanitizeForGrid(dt);
         }
 
         public static decimal GetMemberYearTotal(int memberId, int year)

@@ -146,8 +146,8 @@ Envelope Steward/
 │   └── PdfReceiptService.cs         ← QuestPDF receipt generation
 │
 ├── SeedData/
-│   ├── OBVU_Church_Membership.csv   ← 335 members, ready to import
-│   └── OBVU_Offering_Types.csv      ← 51 offering types, ready to import
+│   ├── sample_members.csv           ← template with common member fields
+│   └── sample_offering_types.csv    ← template with common offering categories
 │
 └── Docs/
     └── architecture.svg             ← app architecture diagram

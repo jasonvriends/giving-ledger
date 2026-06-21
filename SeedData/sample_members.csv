@@ -1,0 +1,7 @@
+Envelope #,First Name,Last Name,Street Address,City,Province,Postal Code,Home Phone,Email,Full Member,Shut In,Active
+1001,John,Smith,123 Main Street,Anytown,ON,K0A 1B0,613-555-0101,john.smith@email.com,Y,N,Y
+1002,Mary & James,Johnson,456 Oak Avenue,Anytown,ON,K0A 1B0,613-555-0102,mary.johnson@email.com,Y,N,Y
+1003,Elizabeth,Williams,789 Elm Street,Smithville,ON,K0A 2C0,613-555-0103,,Y,N,Y
+1004,Robert & Susan,Brown,12 Maple Drive,Anytown,ON,K0A 1B0,613-555-0104,rbrown@email.com,Y,N,Y
+1005,Dorothy,Taylor,34 Pine Road,Riverside,ON,K0B 1A0,613-555-0105,,N,Y,Y
+1006,Harold & Margaret,Davis,56 Cedar Lane,Anytown,ON,K0A 1C0,613-555-0106,,Y,N,N
