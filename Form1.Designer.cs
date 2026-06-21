@@ -29,7 +29,8 @@ namespace Envelope_Steward
 
         // Reports tab
         private DataGridView dgvReport;
-        private ComboBox cmbReportYear, cmbReportType, cmbReportPeriod;
+        private ComboBox cmbReportYear, cmbReportType, cmbReportPeriod, cmbCompareYear;
+        private CheckBox chkActiveOnly;
 
         // Settings tab
         private TextBox txtChurchName, txtChurchAddress, txtChurchCity,
@@ -41,11 +42,12 @@ namespace Envelope_Steward
         // Status
         private StatusStrip statusStrip1;
         private ToolStripStatusLabel toolStripStatusLabel1;
+        private ToolStripStatusLabel lblStatYtd, lblStatDonors, lblStatReceipt;
 
         private void InitializeComponent()
         {
             SuspendLayout();
-            Text = "Envelope Steward";
+            Text = "Giving Ledger";
             ClientSize = new Size(1280, 760);
             MinimumSize = new Size(900, 600);
             StartPosition = FormStartPosition.CenterScreen;

@@ -7,7 +7,11 @@ namespace Envelope_Steward
     public static class DataAccess
     {
         private static string DataFolder => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data");
-        public  static string DbPath     => Path.Combine(DataFolder, "envelopes.db");
+
+        // ── Multi-church support ─────────────────────────────────────────────
+        private static string _currentDbFile = "envelopes.db";
+        public  static string CurrentChurch   { get; private set; } = "Default";
+        public  static string DbPath          => Path.Combine(DataFolder, _currentDbFile);
         private static string ConnectionString => $"Data Source={DbPath}";
 
         // ── Schema ──────────────────────────────────────────────────────────
@@ -390,6 +394,21 @@ CREATE TABLE IF NOT EXISTS Receipts (
             cmd.ExecuteNonQuery();
         }
 
+        public static bool IsDuplicateDonation(int memberId, decimal amount, DateTime date, int excludeId = 0)
+        {
+            EnsureDatabase();
+            using var conn = new SqliteConnection(ConnectionString);
+            conn.Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"SELECT COUNT(*) FROM Donations
+                WHERE MemberId=$mid AND Amount=$amt AND date(Date)=date($dt) AND Id<>$ex";
+            cmd.Parameters.AddWithValue("$mid", memberId);
+            cmd.Parameters.AddWithValue("$amt", (double)amount);
+            cmd.Parameters.AddWithValue("$dt", date.ToString("yyyy-MM-dd"));
+            cmd.Parameters.AddWithValue("$ex", excludeId);
+            return Convert.ToInt32(cmd.ExecuteScalar()) > 0;
+        }
+
         public static void DeleteDonation(int id)
         {
             EnsureDatabase();
@@ -581,7 +600,7 @@ CREATE TABLE IF NOT EXISTS Receipts (
             return SanitizeForGrid(dt);
         }
 
-        public static DataTable GetReportTaxReceiptSummary(int year)
+        public static DataTable GetReportTaxReceiptSummary(int year, bool activeOnly = false)
         {
             EnsureDatabase();
             var dt = new DataTable();
@@ -589,7 +608,8 @@ CREATE TABLE IF NOT EXISTS Receipts (
             conn.Open();
             using var cmd = conn.CreateCommand();
             cmd.Parameters.AddWithValue("$yr", year.ToString());
-            cmd.CommandText = @"SELECT
+            string activeFilter = activeOnly ? "AND m.Active='Y'" : "";
+            cmd.CommandText = $@"SELECT
                 m.Id as 'MemberId',
                 m.EnvelopeNumber as 'Env #',
                 m.FirstName||' '||m.LastName as 'Member',
@@ -601,12 +621,84 @@ CREATE TABLE IF NOT EXISTS Receipts (
                 JOIN OfferingTypes ot ON d.OfferingTypeId=ot.Id
                 WHERE strftime('%Y',d.Date)=$yr
                 AND (ot.TaxReceiptable=1 OR ot.TaxReceiptable IS NULL)
+                {activeFilter}
                 GROUP BY m.Id
                 HAVING SUM(d.Amount) > 0
                 ORDER BY m.EnvelopeNumber";
             using var r = cmd.ExecuteReader();
             dt.Load(r);
             return SanitizeForGrid(dt);
+        }
+
+        public static DataTable GetReportYearOverYear(int year1, int year2, bool byMember = true)
+        {
+            EnsureDatabase();
+            var dt = new DataTable();
+            using var conn = new SqliteConnection(ConnectionString);
+            conn.Open();
+            using var cmd = conn.CreateCommand();
+            cmd.Parameters.AddWithValue("$y1", year1.ToString());
+            cmd.Parameters.AddWithValue("$y2", year2.ToString());
+
+            if (byMember)
+            {
+                cmd.CommandText = $@"SELECT
+                    m.EnvelopeNumber as 'Env #',
+                    m.FirstName||' '||m.LastName as 'Member',
+                    CAST(COALESCE(SUM(CASE WHEN strftime('%Y',d.Date)=$y1 THEN d.Amount END),0) AS REAL) as '{year1}',
+                    CAST(COALESCE(SUM(CASE WHEN strftime('%Y',d.Date)=$y2 THEN d.Amount END),0) AS REAL) as '{year2}',
+                    CAST(COALESCE(SUM(CASE WHEN strftime('%Y',d.Date)=$y2 THEN d.Amount END),0)
+                        - COALESCE(SUM(CASE WHEN strftime('%Y',d.Date)=$y1 THEN d.Amount END),0) AS REAL) as 'Change'
+                    FROM Donations d
+                    JOIN Members m ON d.MemberId=m.Id
+                    WHERE strftime('%Y',d.Date) IN ($y1,$y2)
+                    GROUP BY m.Id
+                    ORDER BY m.EnvelopeNumber";
+            }
+            else
+            {
+                cmd.CommandText = $@"SELECT
+                    CASE WHEN ot.Description IS NOT NULL AND ot.Description!='' THEN ot.Description ELSE ot.Name END as 'Offering Type',
+                    CAST(COALESCE(SUM(CASE WHEN strftime('%Y',d.Date)=$y1 THEN d.Amount END),0) AS REAL) as '{year1}',
+                    CAST(COALESCE(SUM(CASE WHEN strftime('%Y',d.Date)=$y2 THEN d.Amount END),0) AS REAL) as '{year2}',
+                    CAST(COALESCE(SUM(CASE WHEN strftime('%Y',d.Date)=$y2 THEN d.Amount END),0)
+                        - COALESCE(SUM(CASE WHEN strftime('%Y',d.Date)=$y1 THEN d.Amount END),0) AS REAL) as 'Change'
+                    FROM Donations d
+                    JOIN OfferingTypes ot ON d.OfferingTypeId=ot.Id
+                    WHERE strftime('%Y',d.Date) IN ($y1,$y2)
+                    GROUP BY ot.Id
+                    ORDER BY ot.Description, ot.Name";
+            }
+            using var r = cmd.ExecuteReader();
+            dt.Load(r);
+            return SanitizeForGrid(dt);
+        }
+
+        public static (decimal YtdTotal, int ActiveDonors, int NextReceiptNum) GetDashboardStats(int year)
+        {
+            EnsureDatabase();
+            using var conn = new SqliteConnection(ConnectionString);
+            conn.Open();
+            string yr = year.ToString();
+
+            using var c1 = conn.CreateCommand();
+            c1.CommandText = "SELECT COALESCE(SUM(Amount),0) FROM Donations WHERE strftime('%Y',Date)=$yr";
+            c1.Parameters.AddWithValue("$yr", yr);
+            decimal ytd = Convert.ToDecimal(c1.ExecuteScalar() ?? 0);
+
+            using var c2 = conn.CreateCommand();
+            c2.CommandText = @"SELECT COUNT(DISTINCT d.MemberId) FROM Donations d
+                JOIN Members m ON d.MemberId=m.Id
+                WHERE strftime('%Y',d.Date)=$yr AND m.Active='Y'";
+            c2.Parameters.AddWithValue("$yr", yr);
+            int donors = Convert.ToInt32(c2.ExecuteScalar() ?? 0);
+
+            using var c3 = conn.CreateCommand();
+            c3.CommandText = "SELECT Value FROM ChurchSettings WHERE Key='NextReceiptNumber'";
+            var raw = c3.ExecuteScalar();
+            int nextReceipt = raw == null || raw == DBNull.Value ? 1 : int.Parse(raw.ToString()!);
+
+            return (ytd, donors, nextReceipt);
         }
 
         // ── Church Settings ──────────────────────────────────────────────────
@@ -679,6 +771,42 @@ CREATE TABLE IF NOT EXISTS Receipts (
             tran.Commit();
             return num;
         }
+
+        public static string[] GetAvailableChurches()
+        {
+            if (!Directory.Exists(DataFolder)) return ["Default"];
+            var files = Directory.GetFiles(DataFolder, "*.db")
+                .Select(f => Path.GetFileNameWithoutExtension(f)!)
+                .OrderBy(n => n)
+                .ToArray();
+            return files.Length > 0 ? files : ["Default"];
+        }
+
+        public static void LoadLastChurch()
+        {
+            // Called at startup before EnsureDatabase so no DB operations here.
+            var lastFile = Path.Combine(DataFolder, "lastused.txt");
+            if (!File.Exists(lastFile)) return;
+            var name = File.ReadAllText(lastFile).Trim();
+            if (!string.IsNullOrEmpty(name))
+            {
+                _currentDbFile = $"{name}.db";
+                CurrentChurch = name;
+            }
+        }
+
+        public static void SwitchChurch(string name)
+        {
+            SqliteConnection.ClearAllPools();
+            _currentDbFile = $"{name}.db";
+            CurrentChurch = name;
+            EnsureDatabase();
+            if (!Directory.Exists(DataFolder)) Directory.CreateDirectory(DataFolder);
+            File.WriteAllText(Path.Combine(DataFolder, "lastused.txt"), name);
+        }
+
+        // Creates a new church DB (SwitchChurch already creates if missing).
+        public static void CreateChurch(string name) => SwitchChurch(name);
 
         public static void RecordReceipt(int receiptNum, int memberId, int taxYear, decimal total, string pdfPath)
         {

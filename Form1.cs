@@ -9,19 +9,43 @@ namespace Envelope_Steward
     {
         public Form1()
         {
+            DataAccess.LoadLastChurch();
             InitializeComponent();
             BuildUI();
             Load += (_, _) =>
             {
                 DataAccess.EnsureDatabase();
-                RefreshMembers();
-                RefreshOfferingTypes();
-                RefreshDonationCombos();
-                RefreshDonations();
-                LoadSettings();
-                RefreshReportYears();
-                SetStatus("Ready");
+                RefreshAll();
+                UpdateTitle();
             };
+        }
+
+        private void RefreshAll()
+        {
+            RefreshMembers();
+            RefreshOfferingTypes();
+            RefreshDonationCombos();
+            RefreshDonations();
+            LoadSettings();
+            RefreshReportYears();
+            RefreshStats();
+            SetStatus("Ready");
+        }
+
+        private void UpdateTitle() =>
+            Text = $"Giving Ledger — {DataAccess.CurrentChurch}";
+
+        private void RefreshStats()
+        {
+            int year = DateTime.Today.Year;
+            try
+            {
+                var (ytd, donors, nextRec) = DataAccess.GetDashboardStats(year);
+                lblStatYtd.Text     = $"YTD {year}: {ytd:C0}";
+                lblStatDonors.Text  = $"Active donors: {donors}";
+                lblStatReceipt.Text = $"Next receipt #: {nextRec}";
+            }
+            catch { /* DB may not be ready on first paint */ }
         }
 
         // ── UI Construction ──────────────────────────────────────────────────
@@ -31,31 +55,40 @@ namespace Envelope_Steward
             // Menu
             var menu = new MenuStrip();
             var fileMenu = new ToolStripMenuItem("File");
-            var miImportMembers  = new ToolStripMenuItem("Import Members CSV...");
+            var miImportMembers   = new ToolStripMenuItem("Import Members CSV...");
             var miImportOfferings = new ToolStripMenuItem("Import Offering Types CSV...");
-            var miOpenDb  = new ToolStripMenuItem("Open Database Location");
-            var miBackup  = new ToolStripMenuItem("Backup Database to OneDrive…");
-            var miExit    = new ToolStripMenuItem("Exit");
-            miImportMembers.Click  += ImportMembers_Click;
+            var miOpenDb    = new ToolStripMenuItem("Open Database Location");
+            var miBackup    = new ToolStripMenuItem("Backup Database to OneDrive…");
+            var miSwitch    = new ToolStripMenuItem("Switch Congregation…");
+            var miNewChurch = new ToolStripMenuItem("Add New Congregation…");
+            var miExit      = new ToolStripMenuItem("Exit");
+            miImportMembers.Click   += ImportMembers_Click;
             miImportOfferings.Click += ImportOfferings_Click;
-            miOpenDb.Click  += (_, _) => System.Diagnostics.Process.Start("explorer.exe",
+            miOpenDb.Click    += (_, _) => System.Diagnostics.Process.Start("explorer.exe",
                 $"/select,\"{DataAccess.DbPath}\"");
-            miBackup.Click  += BackupToOneDrive_Click;
-            miExit.Click    += (_, _) => Close();
+            miBackup.Click    += BackupToOneDrive_Click;
+            miSwitch.Click    += SwitchChurch_Click;
+            miNewChurch.Click += AddChurch_Click;
+            miExit.Click      += (_, _) => Close();
             fileMenu.DropDownItems.AddRange(new ToolStripItem[]
             {
                 miImportMembers, miImportOfferings,
                 new ToolStripSeparator(),
                 miOpenDb, miBackup,
                 new ToolStripSeparator(),
+                miSwitch, miNewChurch,
+                new ToolStripSeparator(),
                 miExit
             });
             menu.Items.Add(fileMenu);
 
-            // Status
+            // Status bar — left: operation message, right: live stats
             statusStrip1 = new StatusStrip();
             toolStripStatusLabel1 = new ToolStripStatusLabel("Ready") { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
-            statusStrip1.Items.Add(toolStripStatusLabel1);
+            lblStatYtd     = new ToolStripStatusLabel("") { BorderSides = ToolStripStatusLabelBorderSides.Left, Padding = new Padding(8, 0, 4, 0) };
+            lblStatDonors  = new ToolStripStatusLabel("") { BorderSides = ToolStripStatusLabelBorderSides.Left, Padding = new Padding(8, 0, 4, 0) };
+            lblStatReceipt = new ToolStripStatusLabel("") { BorderSides = ToolStripStatusLabelBorderSides.Left, Padding = new Padding(8, 0, 8, 0) };
+            statusStrip1.Items.AddRange(new ToolStripItem[] { toolStripStatusLabel1, lblStatYtd, lblStatDonors, lblStatReceipt });
 
             // Tab control
             tabMain = new TabControl { Dock = DockStyle.Fill };
@@ -101,6 +134,8 @@ namespace Envelope_Steward
             var btnAdd    = TB("Add");
             var btnEdit   = TB("Edit");
             var btnDelete = TB("Delete");
+            toolbar.Controls.Add(new Label { Text = "|", AutoSize = true, Margin = new Padding(6, 6, 6, 0), ForeColor = Color.Silver });
+            var btnLabels = TB("Print Mailing Labels (PDF)");
 
             btnSearch.Click += (_, _) => RefreshMembers(txtMemberSearch.Text);
             btnClear.Click  += (_, _) => { txtMemberSearch.Clear(); RefreshMembers(); };
@@ -108,6 +143,7 @@ namespace Envelope_Steward
             btnAdd.Click    += MemberAdd_Click;
             btnEdit.Click   += MemberEdit_Click;
             btnDelete.Click += MemberDelete_Click;
+            btnLabels.Click += PrintMailingLabels_Click;
 
             dgvMembers = MakeGrid();
             dgvMembers.CellDoubleClick += (_, _) => MemberEdit_Click(null, EventArgs.Empty);
@@ -138,6 +174,7 @@ namespace Envelope_Steward
             {
                 DataAccess.AddMember(dlg.Member);
                 RefreshMembers(txtMemberSearch.Text);
+                RefreshStats();
                 SetStatus("Member added.");
             }
             catch (Exception ex) { ShowError("Could not add member: " + ex.Message); }
@@ -154,6 +191,7 @@ namespace Envelope_Steward
             {
                 DataAccess.UpdateMember(dlg.Member);
                 RefreshMembers(txtMemberSearch.Text);
+                RefreshStats();
                 SetStatus("Member updated.");
             }
             catch (Exception ex) { ShowError("Could not update member: " + ex.Message); }
@@ -168,6 +206,7 @@ namespace Envelope_Steward
             {
                 DataAccess.DeleteMember(id);
                 RefreshMembers(txtMemberSearch.Text);
+                RefreshStats();
                 SetStatus("Member deleted.");
             }
             catch (Exception ex) { ShowError("Could not delete: " + ex.Message); }
@@ -382,12 +421,21 @@ namespace Envelope_Steward
                 Date = dtpDonationDate.Value,
                 Notes = txtDonationNotes.Text.Trim()
             };
+
+            if (DataAccess.IsDuplicateDonation(d.MemberId, d.Amount, d.Date))
+            {
+                if (MessageBox.Show(
+                    $"A donation of {amount:C2} for {member.DisplayName} on {d.Date:d} already exists.\n\nAdd it anyway?",
+                    "Possible Duplicate", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
+            }
+
             try
             {
                 DataAccess.AddDonation(d);
                 txtDonationAmount.Clear();
                 txtDonationNotes.Clear();
                 RefreshDonations();
+                RefreshStats();
                 // Update year combo if needed
                 var years = DataAccess.GetAvailableYears();
                 cmbDonationYear.Items.Clear();
@@ -408,7 +456,7 @@ namespace Envelope_Steward
             var types = DataAccess.GetAllOfferingTypes();
             using var dlg = new DonationEditForm(existing, members, types);
             if (dlg.ShowDialog(this) != DialogResult.OK) return;
-            try { DataAccess.UpdateDonation(dlg.Record); RefreshDonations(); SetStatus("Donation updated."); }
+            try { DataAccess.UpdateDonation(dlg.Record); RefreshDonations(); RefreshStats(); SetStatus("Donation updated."); }
             catch (Exception ex) { ShowError("Could not update: " + ex.Message); }
         }
 
@@ -416,7 +464,7 @@ namespace Envelope_Steward
         {
             if (!TryGetSelectedId(dgvDonations, out int id)) return;
             if (MessageBox.Show("Delete this donation?", "Confirm", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
-            try { DataAccess.DeleteDonation(id); RefreshDonations(); SetStatus("Donation deleted."); }
+            try { DataAccess.DeleteDonation(id); RefreshDonations(); RefreshStats(); SetStatus("Donation deleted."); }
             catch (Exception ex) { ShowError("Could not delete: " + ex.Message); }
         }
 
@@ -441,7 +489,7 @@ namespace Envelope_Steward
 
             RL("Report:");
             cmbReportType = new ComboBox { Width = 200, DropDownStyle = ComboBoxStyle.DropDownList, Margin = M() };
-            cmbReportType.Items.AddRange(new object[] { "By Member", "By Offering Type", "Tax Receipt Summary" });
+            cmbReportType.Items.AddRange(new object[] { "By Member", "By Offering Type", "Tax Receipt Summary", "Year-over-Year by Member", "Year-over-Year by Offering Type" });
             cmbReportType.SelectedIndex = 0;
             toolbar.Controls.Add(cmbReportType);
 
@@ -451,13 +499,30 @@ namespace Envelope_Steward
             cmbReportPeriod.SelectedIndex = 0;
             toolbar.Controls.Add(cmbReportPeriod);
 
+            // Compare Year — visible only for YoY reports
+            var lblCompare = new Label { Text = "vs Year:", AutoSize = true, Margin = new Padding(4, 7, 2, 0), Visible = false };
+            toolbar.Controls.Add(lblCompare);
+            cmbCompareYear = new ComboBox { Width = 80, DropDownStyle = ComboBoxStyle.DropDownList, Margin = M(), Visible = false };
+            toolbar.Controls.Add(cmbCompareYear);
+
+            // Active Only — visible only for Tax Receipt Summary
+            chkActiveOnly = new CheckBox { Text = "Active members only", AutoSize = true, Checked = true, Margin = new Padding(8, 7, 4, 0), Visible = false };
+            toolbar.Controls.Add(chkActiveOnly);
+
             var btnRun      = RB("Run Report");
             var btnExport   = RB("Export CSV");
             toolbar.Controls.Add(new Label { Text = "|", AutoSize = true, Margin = new Padding(6, 7, 6, 0), ForeColor = Color.Silver });
             var btnReceipts = RB("Generate Tax Receipts (PDF)");
 
             cmbReportType.SelectedIndexChanged += (_, _) =>
-                cmbReportPeriod.Enabled = cmbReportType.Text != "Tax Receipt Summary";
+            {
+                bool isYoY     = cmbReportType.Text.StartsWith("Year-over-Year");
+                bool isTaxSummary = cmbReportType.Text == "Tax Receipt Summary";
+                cmbReportPeriod.Enabled = !isYoY && !isTaxSummary;
+                lblCompare.Visible   = isYoY;
+                cmbCompareYear.Visible = isYoY;
+                chkActiveOnly.Visible  = isTaxSummary;
+            };
 
             btnRun.Click      += ReportRun_Click;
             btnExport.Click   += ReportExport_Click;
@@ -473,27 +538,40 @@ namespace Envelope_Steward
         {
             var years = DataAccess.GetAvailableYears();
             cmbReportYear.Items.Clear();
-            foreach (var yr in years) cmbReportYear.Items.Add(yr);
+            cmbCompareYear.Items.Clear();
+            foreach (var yr in years) { cmbReportYear.Items.Add(yr); cmbCompareYear.Items.Add(yr); }
             if (cmbReportYear.Items.Count > 0) cmbReportYear.SelectedIndex = 0;
+            // Default compare year = previous year
+            if (cmbCompareYear.Items.Count > 1) cmbCompareYear.SelectedIndex = 1;
+            else if (cmbCompareYear.Items.Count == 1) cmbCompareYear.SelectedIndex = 0;
         }
 
         private void ReportRun_Click(object? s, EventArgs e)
         {
             if (cmbReportYear.SelectedItem is not int year) { ShowError("Select a year."); return; }
             string period = cmbReportPeriod.Text;
+            bool isYoY = cmbReportType.Text.StartsWith("Year-over-Year");
+            int compareYear = cmbCompareYear.SelectedItem is int cy ? cy : year - 1;
             try
             {
                 System.Data.DataTable dt = cmbReportType.Text switch
                 {
-                    "By Offering Type" => DataAccess.GetReportByOfferingType(year, period),
-                    "Tax Receipt Summary" => DataAccess.GetReportTaxReceiptSummary(year),
-                    _ => DataAccess.GetReportByMember(year, period)
+                    "By Offering Type"              => DataAccess.GetReportByOfferingType(year, period),
+                    "Tax Receipt Summary"            => DataAccess.GetReportTaxReceiptSummary(year, chkActiveOnly.Checked),
+                    "Year-over-Year by Member"       => DataAccess.GetReportYearOverYear(compareYear, year, byMember: true),
+                    "Year-over-Year by Offering Type"=> DataAccess.GetReportYearOverYear(compareYear, year, byMember: false),
+                    _                               => DataAccess.GetReportByMember(year, period)
                 };
+                dgvReport.DataSource = null;
                 dgvReport.DataSource = dt;
                 if (dgvReport.Columns.Contains("MemberId")) dgvReport.Columns["MemberId"]!.Visible = false;
+                foreach (DataGridViewColumn col in dgvReport.Columns)
+                    if (col.ValueType == typeof(double) || col.ValueType == typeof(decimal))
+                        col.DefaultCellStyle.Format = "C2";
                 if (dgvReport.Columns.Contains("Total")) dgvReport.Columns["Total"]!.DefaultCellStyle.Format = "C2";
                 if (dgvReport.Columns.Contains("Receipt Total")) dgvReport.Columns["Receipt Total"]!.DefaultCellStyle.Format = "C2";
-                SetStatus($"{dgvReport.Rows.Count} row(s) — {cmbReportType.Text} {period} {year}");
+                string label = isYoY ? $"{compareYear} vs {year}" : $"{period} {year}";
+                SetStatus($"{dgvReport.Rows.Count} row(s) — {cmbReportType.Text} {label}");
             }
             catch (Exception ex) { ShowError("Report failed: " + ex.Message); }
         }
@@ -505,7 +583,8 @@ namespace Envelope_Steward
             if (dlg.ShowDialog(this) != DialogResult.OK) return;
             try
             {
-                var dt = (System.Data.DataTable)dgvReport.DataSource;
+                var dt = (System.Data.DataTable?)dgvReport.DataSource;
+                if (dt == null) return;
                 var sb = new System.Text.StringBuilder();
                 sb.AppendLine(string.Join(",", dt.Columns.Cast<System.Data.DataColumn>().Where(c => c.ColumnName != "MemberId").Select(c => $"\"{c.ColumnName}\"")));
                 foreach (System.Data.DataRow row in dt.Rows)
@@ -528,7 +607,7 @@ namespace Envelope_Steward
                 return;
             }
 
-            var summary = DataAccess.GetReportTaxReceiptSummary(year);
+            var summary = DataAccess.GetReportTaxReceiptSummary(year, chkActiveOnly.Checked);
             if (summary.Rows.Count == 0) { ShowError($"No taxable donations found for {year}."); return; }
 
             if (MessageBox.Show(
@@ -554,6 +633,7 @@ namespace Envelope_Steward
                 progress.ShowDialog(this);
                 thread.Join();
 
+                RefreshStats();
                 SetStatus($"{done} receipt(s) generated in {outputFolder}");
                 if (!string.IsNullOrEmpty(outputFolder) && Directory.Exists(outputFolder))
                 {
@@ -659,8 +739,64 @@ namespace Envelope_Steward
                 LogoPath = lblLogoPath.Text.Trim(),
                 NextReceiptNumber = (int)nudNextReceiptNum.Value
             };
-            try { DataAccess.SaveChurchSettings(settings); SetStatus("Settings saved."); }
+            try { DataAccess.SaveChurchSettings(settings); RefreshStats(); SetStatus("Settings saved."); }
             catch (Exception ex) { ShowError("Could not save settings: " + ex.Message); }
+        }
+
+        // ── Multi-church ─────────────────────────────────────────────────────
+
+        private void SwitchChurch_Click(object? s, EventArgs e)
+        {
+            var churches = DataAccess.GetAvailableChurches();
+            using var dlg = new Forms.ChurchSelectorForm(churches, DataAccess.CurrentChurch);
+            if (dlg.ShowDialog(this) != DialogResult.OK) return;
+            DataAccess.SwitchChurch(dlg.SelectedChurch);
+            RefreshAll();
+            UpdateTitle();
+        }
+
+        private void AddChurch_Click(object? s, EventArgs e)
+        {
+            using var dlg = new Forms.ChurchSelectorForm(DataAccess.GetAvailableChurches(), DataAccess.CurrentChurch, createMode: true);
+            if (dlg.ShowDialog(this) != DialogResult.OK) return;
+            DataAccess.CreateChurch(dlg.SelectedChurch);
+            RefreshAll();
+            UpdateTitle();
+        }
+
+        // ── Mailing Labels ───────────────────────────────────────────────────
+
+        private void PrintMailingLabels_Click(object? s, EventArgs e)
+        {
+            // Respect current search filter — labels for currently visible members
+            var members = DataAccess.GetAllMembers();
+            if (!string.IsNullOrWhiteSpace(txtMemberSearch.Text))
+            {
+                var q = txtMemberSearch.Text.ToLowerInvariant();
+                members = members.Where(m =>
+                    m.FirstName.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    m.LastName.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    m.EnvelopeNumber.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    m.City.Contains(q, StringComparison.OrdinalIgnoreCase)).ToList();
+            }
+
+            if (members.Count == 0) { ShowError("No members to print labels for."); return; }
+
+            using var save = new SaveFileDialog
+            {
+                Filter = "PDF files (*.pdf)|*.pdf",
+                FileName = $"MailingLabels_{DataAccess.CurrentChurch}_{DateTime.Today:yyyyMMdd}.pdf"
+            };
+            if (save.ShowDialog(this) != DialogResult.OK) return;
+
+            try
+            {
+                Services.MailingLabelService.GenerateLabels(members, save.FileName);
+                SetStatus($"Mailing labels saved: {save.FileName}");
+                if (MessageBox.Show("Labels generated. Open PDF?", "Done", MessageBoxButtons.YesNo) == DialogResult.Yes)
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(save.FileName) { UseShellExecute = true });
+            }
+            catch (Exception ex) { ShowError("Could not generate labels: " + ex.Message); }
         }
 
         // ── Backup ───────────────────────────────────────────────────────────
