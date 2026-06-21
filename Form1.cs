@@ -111,6 +111,12 @@ namespace Envelope_Steward
 
             dgvMembers = MakeGrid();
             dgvMembers.CellDoubleClick += (_, _) => MemberEdit_Click(null, EventArgs.Empty);
+            dgvMembers.MouseDown += GridSelectRowOnRightClick;
+            var ctxMembers = new ContextMenuStrip();
+            ctxMembers.Items.Add("Edit Member",   null, MemberEdit_Click);
+            ctxMembers.Items.Add(new ToolStripSeparator());
+            ctxMembers.Items.Add("Delete Member", null, MemberDelete_Click);
+            dgvMembers.ContextMenuStrip = ctxMembers;
 
             tabMembers.Controls.Add(dgvMembers);
             tabMembers.Controls.Add(toolbar);
@@ -189,6 +195,12 @@ namespace Envelope_Steward
 
             dgvOfferingTypes = MakeGrid();
             dgvOfferingTypes.CellDoubleClick += (_, _) => OfferingTypeEdit_Click(null, EventArgs.Empty);
+            dgvOfferingTypes.MouseDown += GridSelectRowOnRightClick;
+            var ctxTypes = new ContextMenuStrip();
+            ctxTypes.Items.Add("Edit Offering Type",   null, OfferingTypeEdit_Click);
+            ctxTypes.Items.Add(new ToolStripSeparator());
+            ctxTypes.Items.Add("Delete Offering Type", null, OfferingTypeDelete_Click);
+            dgvOfferingTypes.ContextMenuStrip = ctxTypes;
 
             tabOfferingTypes.Controls.Add(dgvOfferingTypes);
             tabOfferingTypes.Controls.Add(toolbar);
@@ -295,6 +307,12 @@ namespace Envelope_Steward
 
             dgvDonations = MakeGrid();
             dgvDonations.CellDoubleClick += (_, _) => DonationEdit_Click(null, EventArgs.Empty);
+            dgvDonations.MouseDown += GridSelectRowOnRightClick;
+            var ctxDonations = new ContextMenuStrip();
+            ctxDonations.Items.Add("Edit Donation",   null, DonationEdit_Click);
+            ctxDonations.Items.Add(new ToolStripSeparator());
+            ctxDonations.Items.Add("Delete Donation", null, DonationDelete_Click);
+            dgvDonations.ContextMenuStrip = ctxDonations;
 
             tabDonations.Controls.Add(dgvDonations);
             tabDonations.Controls.Add(filterPanel);
@@ -745,6 +763,15 @@ namespace Envelope_Steward
             // Prevent the default error dialog from popping up on type mismatches.
             g.DataError += (_, e) => e.ThrowException = false;
             return g;
+        }
+
+        // Selects the row under the cursor on right-click so context menus
+        // work without requiring a prior left-click to select the row.
+        private static void GridSelectRowOnRightClick(object? sender, MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Right || sender is not DataGridView dgv) return;
+            var hit = dgv.HitTest(e.X, e.Y);
+            if (hit.RowIndex >= 0) dgv.Rows[hit.RowIndex].Selected = true;
         }
 
         private static bool TryGetSelectedId(DataGridView dgv, out int id)

@@ -16,13 +16,17 @@ namespace Envelope_Steward.Forms
             FormBorderStyle = FormBorderStyle.FixedDialog;
             StartPosition = FormStartPosition.CenterParent;
             MaximizeBox = false; MinimizeBox = false;
-            Size = new Size(400, 230);
+            AutoSize = true;
+            AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            MinimumSize = new Size(440, 0);
 
             var tlp = new TableLayoutPanel
             {
-                Dock = DockStyle.Fill,
                 ColumnCount = 2,
-                Padding = new Padding(12)
+                Padding = new Padding(12),
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                MinimumSize = new Size(416, 0)
             };
             tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130));
             tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -63,8 +67,8 @@ namespace Envelope_Steward.Forms
             AcceptButton = btnOk;
             CancelButton = btnCancel;
 
-            Controls.Add(tlp);
             Controls.Add(btnPanel);
+            Controls.Add(tlp);
         }
     }
 }
