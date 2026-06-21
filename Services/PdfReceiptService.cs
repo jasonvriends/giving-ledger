@@ -30,19 +30,25 @@ namespace Envelope_Steward.Services
             var fileName = $"Receipt_{data.ReceiptNumber}_{safeName}_{data.TaxYear}.pdf";
             var filePath = Path.Combine(outputFolder, fileName);
 
+            // Letter = 612 × 792 pt.  Margin 10 mm = 28.35 pt each side.
+            // Content height ≈ 792 − 56.7 = 735.3 pt.
+            // 2 dividers of 5 pt = 10 pt.  Each receipt = (735.3 − 10) / 3 ≈ 241 pt.
+            const float ReceiptHeight = 241f;
+            const float DividerHeight = 5f;
+
             Document.Create(container =>
             {
                 container.Page(page =>
                 {
                     page.Size(PageSizes.Letter);
-                    page.Margin(12, Unit.Millimetre);
+                    page.Margin(10, Unit.Millimetre);
                     page.DefaultTextStyle(x => x.FontSize(10).FontFamily("Arial"));
 
                     page.Content().Column(col =>
                     {
                         for (int copy = 0; copy < 3; copy++)
                         {
-                            col.Item().Border(1).BorderColor(Colors.Black).Padding(10).Column(receipt =>
+                            col.Item().Height(ReceiptHeight).Border(1).BorderColor(Colors.Black).Padding(10).Column(receipt =>
                             {
                                 // ── Row 1: church info left | receipt # / reg # right ──
                                 receipt.Item().Row(row =>
@@ -115,7 +121,7 @@ namespace Envelope_Steward.Services
                             });
 
                             if (copy < 2)
-                                col.Item().Height(6);
+                                col.Item().Height(DividerHeight);
                         }
                     });
                 });

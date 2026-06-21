@@ -769,33 +769,66 @@ namespace Envelope_Steward
     {
         private readonly ProgressBar pb;
         private readonly Label lblStatus;
+        private readonly Label lblFolder;
         private readonly Button btnClose;
 
         public ProgressForm(int total)
         {
             Text = "Generating Receipts...";
-            Size = new Size(460, 160);
+            Size = new Size(520, 210);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             StartPosition = FormStartPosition.CenterParent;
             MaximizeBox = false; MinimizeBox = false;
             ControlBox = false;
+            Padding = new Padding(12);
 
-            lblStatus = new Label { Text = "Starting...", AutoSize = false, Dock = DockStyle.Top, Height = 30, TextAlign = ContentAlignment.MiddleCenter, Padding = new Padding(0, 8, 0, 0) };
-            pb = new ProgressBar { Dock = DockStyle.Top, Height = 24, Maximum = total, Style = ProgressBarStyle.Continuous, Margin = new Padding(12, 0, 12, 0) };
-            btnClose = new Button { Text = "Close", Width = 80, Dock = DockStyle.Bottom, Enabled = false, DialogResult = DialogResult.OK };
+            lblStatus = new Label
+            {
+                Text = "Starting...", AutoSize = false,
+                Dock = DockStyle.Top, Height = 28,
+                TextAlign = ContentAlignment.MiddleCenter
+            };
+            pb = new ProgressBar
+            {
+                Dock = DockStyle.Top, Height = 24, Maximum = total,
+                Style = ProgressBarStyle.Continuous
+            };
+            lblFolder = new Label
+            {
+                AutoSize = false, Dock = DockStyle.Top, Height = 52,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Font = new Font(Font.FontFamily, 8f),
+                ForeColor = System.Drawing.Color.FromArgb(60, 60, 60)
+            };
 
-            Controls.AddRange(new Control[] { btnClose, pb, lblStatus });
+            var btnPanel = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Bottom, Height = 44,
+                FlowDirection = FlowDirection.RightToLeft,
+                Padding = new Padding(0, 6, 0, 0)
+            };
+            btnClose = new Button
+            {
+                Text = "Close", Width = 88, Height = 30,
+                Enabled = false, DialogResult = DialogResult.OK
+            };
+            btnPanel.Controls.Add(btnClose);
+
+            // Add in reverse order for Dock stacking
+            Controls.AddRange(new Control[] { btnPanel, lblFolder, pb, lblStatus });
         }
 
         public void Update(int done, int total, string name)
         {
             pb.Value = done;
-            lblStatus.Text = $"({done}/{total}) {name}";
+            lblStatus.Text = $"Generating {done} of {total} — {name}";
         }
 
         public void MarkDone(int count, string folder)
         {
-            lblStatus.Text = $"Done — {count} receipt(s) saved to {folder}";
+            Text = "Receipts Generated";
+            lblStatus.Text = $"✓  {count} receipt(s) generated successfully.";
+            lblFolder.Text = $"Saved to:\n{folder}";
             btnClose.Enabled = true;
             ControlBox = true;
         }
